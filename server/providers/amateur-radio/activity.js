@@ -1,10 +1,12 @@
 import { io } from 'socket.io-client';
 import {
   normalizeActivity,
+  normalizeNodeActivity,
   ACTIVITY_MAX_AGE,
 } from '../../../src/sources/brandmeisterActivity.js';
+import { BRANDMEISTER_SHORT_AGE } from '../../../src/sources/amateurRadioDirectory.js';
 
-/** Public group-call metadata only; no audio, callsigns, credentials or RF controls. */
+/** Public group-call metadata and directory-node matches; no audio or RF controls. */
 export function createBrandmeisterActivity({
   connect = io,
   now = () => Date.now(),
@@ -19,8 +21,23 @@ export function createBrandmeisterActivity({
   let status = 'error',
     error = 'BrandMeister activity has not connected.';
   const sessions = new Map();
+  const heardNodes = new Map();
+  let nodeDirectory = new Map();
+  let nodeLeaseUntil = 0;
+  let observedSince = null;
+
+  function clearNodes() {
+    heardNodes.clear();
+    nodeDirectory = new Map();
+    nodeLeaseUntil = 0;
+    observedSince = null;
+  }
   function snapshot() {
     const time = now();
+    if (nodeLeaseUntil < time) clearNodes();
+    for (const [nodeId, lastHeardAt] of heardNodes)
+      if (time - lastHeardAt > BRANDMEISTER_SHORT_AGE)
+        heardNodes.delete(nodeId);
     for (const [id, row] of sessions) {
       if (
         time - row.receivedAt > ACTIVITY_MAX_AGE ||
@@ -53,6 +70,7 @@ export function createBrandmeisterActivity({
     socket?.close();
     socket = null;
     sessions.clear();
+    clearNodes();
     status = 'error';
     error = 'BrandMeister activity disconnected.';
     finish();
@@ -61,6 +79,8 @@ export function createBrandmeisterActivity({
     status = 'error';
     error = message;
     sessions.clear();
+    heardNodes.clear();
+    observedSince = null;
     console.warn('[Amateur Radio] BrandMeister activity:', message);
     finish();
   }
@@ -69,7 +89,7 @@ export function createBrandmeisterActivity({
     if (sample !== null) cancel(sample);
     sample = schedule(finish, 2000);
   }
-  return {
+  const api = {
     async getSnapshot() {
       if (idle !== null) cancel(idle);
       idle = schedule(close, 90_000);
@@ -102,11 +122,19 @@ export function createBrandmeisterActivity({
         socket.on('connect', () => {
           status = 'live';
           error = null;
+          if (nodeLeaseUntil >= now()) observedSince = now();
           socket.emit('join', 'everything');
           requestSample();
         });
         socket.on('mqtt', (message) => {
-          const row = normalizeActivity(message, now());
+          const time = now();
+          const collectingNodes = nodeLeaseUntil >= time;
+          if (!collectingNodes && nodeLeaseUntil) clearNodes();
+          const row = normalizeActivity(
+            message,
+            time,
+            collectingNodes ? BRANDMEISTER_SHORT_AGE : ACTIVITY_MAX_AGE,
+          );
           if (!row) return;
           const previous = sessions.get(row.sessionId);
           if (
@@ -115,6 +143,16 @@ export function createBrandmeisterActivity({
               previous.activityAt > row.activityAt)
           )
             return;
+          if (collectingNodes) {
+            const node = normalizeNodeActivity(message, time);
+            const directoryNode = node && nodeDirectory.get(node.nodeId);
+            if (
+              directoryNode &&
+              directoryNode.callsign.trim().toUpperCase() === node.nodeCall &&
+              node.lastHeardAt > (heardNodes.get(node.nodeId) ?? 0)
+            )
+              heardNodes.set(node.nodeId, node.lastHeardAt);
+          }
           sessions.delete(row.sessionId);
           sessions.set(row.sessionId, row);
           while (sessions.size > 512)
@@ -130,6 +168,45 @@ export function createBrandmeisterActivity({
       }
       return result;
     },
+    async getNodeSnapshot(directory) {
+      const time = now();
+      if (nodeLeaseUntil < time) {
+        heardNodes.clear();
+        observedSince = null;
+      }
+      for (const nodeId of heardNodes.keys())
+        if (
+          directory.get(nodeId)?.callsign.trim().toUpperCase() !==
+          nodeDirectory.get(nodeId)?.callsign.trim().toUpperCase()
+        )
+          heardNodes.delete(nodeId);
+      nodeDirectory = directory;
+      nodeLeaseUntil = time + 30_000;
+      if (socket?.connected && observedSince === null) observedSince = time;
+      const activity = await api.getSnapshot();
+      const fetchedAt = now();
+      const rows = [];
+      for (const [nodeId, lastHeardAt] of heardNodes) {
+        const node = nodeDirectory.get(nodeId);
+        if (
+          !node ||
+          lastHeardAt > fetchedAt ||
+          fetchedAt - lastHeardAt > BRANDMEISTER_SHORT_AGE
+        ) {
+          heardNodes.delete(nodeId);
+          continue;
+        }
+        if (activity.status === 'live') rows.push({ ...node, lastHeardAt });
+      }
+      return {
+        status: activity.status,
+        error: activity.error,
+        fetchedAt,
+        observedSince,
+        rows,
+      };
+    },
     close,
   };
+  return api;
 }

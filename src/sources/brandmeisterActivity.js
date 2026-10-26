@@ -13,7 +13,7 @@ export const TALK_GROUP_TIERS = [
   'Other talkgroups',
 ];
 
-export function normalizeActivity(message, now) {
+function readActivity(message, now, maxAge) {
   if (
     !message ||
     !['LH', 'LH-Startup'].includes(message.topic) ||
@@ -50,7 +50,15 @@ export function normalizeActivity(message, now) {
     return null;
   const active = row.Stop === 0;
   const activityAt = (active ? row.Start : row.Stop) * 1000;
-  if (now - activityAt > (active ? 900_000 : ACTIVITY_MAX_AGE)) return null;
+  if (now - activityAt > (active ? 900_000 : maxAge)) return null;
+  return row;
+}
+
+export function normalizeActivity(message, now, maxAge = ACTIVITY_MAX_AGE) {
+  const row = readActivity(message, now, maxAge);
+  if (!row) return null;
+  const active = row.Stop === 0;
+  const activityAt = (active ? row.Start : row.Stop) * 1000;
   return {
     sessionId: row.SessionID,
     talkgroup: row.DestinationID,
@@ -66,7 +74,31 @@ export function normalizeActivity(message, now) {
   };
 }
 
-export function chooseLatestTalkgroup(rows, now) {
+export function normalizeNodeActivity(message, now) {
+  const row = readActivity(message, now, BRANDMEISTER_SHORT_AGE);
+  if (
+    !row ||
+    ![1, '1'].includes(row.LinkType) ||
+    !['number', 'string'].includes(typeof row.ContextID) ||
+    !/^[1-9]\d{0,11}$/.test(String(row.ContextID)) ||
+    typeof row.LinkCall !== 'string' ||
+    !/^[A-Z0-9/-]{1,32}$/i.test(row.LinkCall.trim()) ||
+    row.Stop * 1000 > now
+  )
+    return null;
+  return {
+    nodeId: String(row.ContextID),
+    nodeCall: row.LinkCall.trim().toUpperCase(),
+    lastHeardAt: row.Stop === 0 ? now : row.Stop * 1000,
+  };
+}
+
+export function chooseLatestTalkgroup(
+  rows,
+  now,
+  countryPriorities = null,
+  areaPriorities = null,
+) {
   const recent = rows.filter(
     (row) =>
       now - row.receivedAt <= ACTIVITY_MAX_AGE &&
@@ -75,14 +107,27 @@ export function chooseLatestTalkgroup(rows, now) {
   );
   const active = recent.filter((row) => row.active);
   const candidates = active.length ? active : recent;
+  const areaTier = (area) =>
+    area?.matched ? (area.entry.scope === 'local' ? 0 : 1) : 2;
   return (
-    candidates.sort(
-      (a, b) =>
-        talkgroupTier(a.talkgroup, a.name) -
-          talkgroupTier(b.talkgroup, b.name) ||
+    candidates.sort((a, b) => {
+      const areaA = areaPriorities?.get(a.talkgroup);
+      const areaB = areaPriorities?.get(b.talkgroup);
+      const priorityA = countryPriorities
+        ? (countryPriorities.get(a.talkgroup)?.distanceKm ?? Infinity)
+        : talkgroupTier(a.talkgroup, a.name);
+      const priorityB = countryPriorities
+        ? (countryPriorities.get(b.talkgroup)?.distanceKm ?? Infinity)
+        : talkgroupTier(b.talkgroup, b.name);
+      return (
+        areaTier(areaA) - areaTier(areaB) ||
+        (areaTier(areaA) === 0 ? areaA.distanceKm - areaB.distanceKm : 0) ||
+        (priorityA === priorityB ? 0 : priorityA - priorityB) ||
+        Number(areaA?.matched === false) - Number(areaB?.matched === false) ||
         b.activityAt - a.activityAt ||
-        a.talkgroup - b.talkgroup,
-    )[0] || null
+        a.talkgroup - b.talkgroup
+      );
+    })[0] || null
   );
 }
 
@@ -112,3 +157,4 @@ export function isActivitySnapshot(snapshot) {
     )
   );
 }
+import { BRANDMEISTER_SHORT_AGE } from './amateurRadioDirectory.js';

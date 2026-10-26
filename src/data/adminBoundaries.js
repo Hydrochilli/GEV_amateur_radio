@@ -288,6 +288,7 @@ const loadAdmin1 = createRetryableLoader(async () => {
   const pack = await loadBundledJson(PACKS.admin1.url);
   const decimals = pack.meta?.decimals ?? 3;
   const index = new Map();
+  const byId = new Map();
   for (const feature of pack.features || []) {
     const entry = {
       kind: 'state',
@@ -299,6 +300,7 @@ const loadAdmin1 = createRetryableLoader(async () => {
       country: normalizeAdminName(feature.country),
       iso2: String(feature.iso2 || '').toLowerCase(),
     };
+    if (feature.iso) byId.set(feature.iso, entry);
     addKey(index, normalizeAdminName(feature.name), entry, 0);
     addKey(index, normalizeAdminName(feature.nameEn), entry, 1);
     for (const alt of feature.alt || [])
@@ -306,8 +308,18 @@ const loadAdmin1 = createRetryableLoader(async () => {
     if (feature.postal && POSTAL_COUNTRIES.has(feature.iso2))
       addKey(index, `postal:${feature.postal.toLowerCase()}`, entry, 2);
   }
-  return { index };
+  return { index, byId };
 });
+
+/** Resolve curated administrative IDs without ambiguous name matching. */
+export async function getAdminAreasById(ids) {
+  const { byId } = await loadAdmin1();
+  return ids.map((id) => {
+    const entry = byId.get(id);
+    if (!entry) throw new Error(`Bundled administrative area not found: ${id}`);
+    return toResult({ entry }, 1);
+  });
+}
 
 const loadCounties = createRetryableLoader(async () => {
   packLoads.counties += 1;
@@ -335,6 +347,7 @@ const loadCountries = createRetryableLoader(async () => {
   packLoads.countries += 1;
   const pack = await loadBundledJson(PACKS.countries.url);
   const index = new Map();
+  const entries = [];
   for (const feature of pack.features || []) {
     const entry = {
       kind: 'country',
@@ -344,11 +357,24 @@ const loadCountries = createRetryableLoader(async () => {
       country: normalizeAdminName(feature.country),
       iso2: feature.iso2?.toLowerCase(),
     };
+    entries.push(entry);
     for (const name of [feature.name, ...(feature.alt || [])])
       addKey(index, normalizeAdminName(name), entry, 0);
   }
-  return { index };
+  return { index, entries };
 });
+
+/** Bundled country polygons, sharing the lazy loader and decoded geometry. */
+export async function getCountryBoundaries() {
+  const { entries } = await loadCountries();
+  return entries
+    .filter((entry) => /^[a-z]{2}$/.test(entry.iso2))
+    .map((entry) => ({
+      code: entry.iso2.toUpperCase(),
+      name: entry.feature.country || entry.feature.name,
+      polygons: geometryOf(entry).polygons,
+    }));
+}
 
 async function countryCandidates(parsed) {
   if (!['any', 'country'].includes(parsed.kind)) return [];

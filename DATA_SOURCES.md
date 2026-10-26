@@ -16,12 +16,31 @@ How to read this:
 The opt-in **Amateur Radio Preview** uses the
 [BrandMeister Halligan device directory](https://api.brandmeister.network/docs/)
 and [EchoLink's official geographic feed](https://www.echolink.org/googleInfo.htm).
-Only nodes within 100 km of Manchester are displayed. Public access to these
+Both directories display worldwide locations; only the separate APRS feed
+remains within 100 km of Manchester. Public access to these
 directories is not a blanket redistribution licence; provider terms continue
 to apply. This preview caches directory data locally in server memory and does
 not bundle it or re-stream audio. Positions are owner-supplied and unverified.
-BrandMeister devices were seen within the last day, not necessarily currently
-online; EchoLink records reflect its online-directory snapshot. Official
+In the default directory view, BrandMeister devices must have a valid UTC last-seen timestamp no older than
+60 minutes and not in the future. This means directory-seen/connected, not
+confirmed voice transmissions or current online status. Unknown/invalid times
+are omitted. Server cache hits, stale-on-error responses, browser ingestion
+and displayed marker expiry all enforce that rolling maximum. The
+**BrandMeister: 60 min / 5 min live** layer chip switches to observed public
+Last Heard node activity instead of applying a five-minute directory-age cutoff.
+Repeater-link events (`LinkType` 1) must match both `ContextID` and `LinkCall`
+to the directory node ID and callsign. Bridges, unmatched nodes and caller-ID or
+talkgroup-location guesses are excluded. The full bounded geolocated directory,
+including records with old or missing last-seen times, is retained server-side
+for this join; the hourly directory response remains strictly filtered.
+The fixed GET `/api/amateur-radio/nodes` route returns only verified matches,
+activity times, directory provenance and explicit status/errors.
+Switching back uses the retained hourly snapshot. Current audio, EchoLink and APRS
+are unchanged. EchoLink
+records reflect its worldwide online-directory snapshot and do not use the
+BrandMeister one-hour filter. Catalogues are not truncated at 2,000 markers;
+normalised rows are capped at 50,000 per provider with explicit failure on
+overflow, and browser responses are byte-bounded. Official
 Hoseline and EchoLink Web are explicitly loaded official cross-origin clients
 inside an app-owned panel, not scraped APIs, relayed streams or automatic node
 connections. EchoLink requires acknowledgment that other clients are closed;
@@ -33,18 +52,68 @@ The BrandMeister **Listen latest** dock additionally receives public group-call
 metadata over the same first-party Last Heard Socket.IO endpoint used by
 Hoseline (`https://api.brandmeister.network`, `/lh`, version 2). It retains only
 bounded session/talkgroup IDs, talkgroup labels and activity/receipt timestamps,
-not callsigns, talker aliases, raw payloads or audio. A single server connection
-is opened on demand and closed after 90 seconds without selection requests;
+not caller identities, talker aliases, raw payloads or audio. A single server connection
+is shared with the map collector and closed after 90 seconds without requests;
 at most 512 sessions are kept in memory, without disk history. Private and
 flagged sessions are excluded. Completed calls expire after three minutes;
 reported active calls have a 15-minute maximum age and three-minute receipt
 freshness limit. Transmitting groups take precedence over ended calls.
 
-Selection prefers UK 234/235 prefixes, then the explicitly curated
-English-priority TGs 91/93/95/913/3100 or labels containing "English", then
-other groups; newest activity wins within each tier. This is not language
-detection, geographic reception or proof of audio availability. It is separate
-from the Manchester directory filter. Hoseline's first-party `?subscribe=<TG>`
+While Amateur Radio is enabled, the map polls node activity about every ten
+seconds, maintaining a 30-second collection lease. The collector retains only
+verified directory-node IDs and their latest public activity time for the rolling
+five-minute view, independently of the 512-session audio-selection buffer.
+Node callsigns are used transiently to verify the already-public directory
+identity; caller IDs, names and aliases are not retained. Active-call observations
+use receipt time; completed calls use the reported stop time. Startup has no
+guaranteed historical backfill, and collection gaps restart its disclosed
+observation window. Failed live connections clear healthy-looking node history.
+The map expires activity locally even during failed requests, reports stale
+directory coordinates separately, and never substitutes old directory dots.
+Node positions are owner-supplied directory coordinates, not operator GPS fixes
+or RF coverage. Protocol reference: [BrandMeister MQTT API](https://wiki.brandmeister.network/index.php/MQTT_API).
+
+An app-bundled intended-area directory contains 84 curated entries, reviewed
+2026-10-26. Talkgroup identities and area labels are factual references to
+BrandMeister's official wiki: [UK group pages](https://wiki.brandmeister.network/index.php/TalkGroup/2358),
+[US state table](https://wiki.brandmeister.network/index.php/United_States),
+[Canada](https://wiki.brandmeister.network/index.php/Canada), and
+[France](https://wiki.brandmeister.network/index.php/France).
+This initial UK/US/Canada/France coverage is not an exhaustive worldwide list.
+Each entry retains its own source URL and review date, exposed in the
+searchable in-dock directory. The static review date does not certify present
+operation or continuous provider verification.
+
+Matching local groups precede matching regions. City reference points are
+CC0 Wikidata facts ([London](https://www.wikidata.org/wiki/Q84),
+[Toronto](https://www.wikidata.org/wiki/Q172),
+[Montreal](https://www.wikidata.org/wiki/Q340),
+[London, Ontario](https://www.wikidata.org/wiki/Q92561)).
+The user-approved 25 km inclusive city-centre proximity rule is an app heuristic,
+not a source-supplied coverage radius. Regional shapes use the existing public
+domain Natural Earth administrative packs; some areas are unions of units
+(e.g. North West England and Ile-de-France). These too are geographic
+approximations of the documented names, not published RF footprints or talker
+positions. No live group-name geocoding, operator lookup or additional radio
+connection is performed. Known out-of-area groups lose ties to other groups
+with the same fallback country priority.
+
+Without a matching intended area, a marker outside the UK ranks associated
+talkgroup countries by great-circle distance to their bundled Natural Earth
+boundaries (public domain), with the marker's containing country at distance zero.
+If its country has no eligible activity, the next nearest available country wins;
+newest activity breaks ties. Country association uses conventional three-digit
+national MCC/DMR prefixes, referenced from
+[mcc-mnc-table](https://github.com/musalbas/mcc-mnc-table) and national DMR
+prefix conventions, not live geocoding or talker positions. These associations are
+best effort: special-purpose groups may not follow national prefix conventions,
+and shared prefixes use their nearest associated country. Unassigned/worldwide
+groups follow mapped countries, or newest activity if no countries are mapped.
+UK markers without a matching area and selections without a marker retain UK 234/235 prefixes, then
+English-priority TGs 91/93/95/913/3100 or names containing "English", then others.
+This is not language detection, geographic reception, a connection to the clicked
+node, or proof of audio availability. It is separate from directory last-seen
+filtering. Hoseline's first-party `?subscribe=<TG>`
 link preselects the result; browser autoplay rules still apply. Playback stays
 in the official client, which can be minimised without unloading its frame.
 The public activity protocol is provider-owned and may change; failures are

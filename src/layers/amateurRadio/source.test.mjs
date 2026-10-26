@@ -5,7 +5,17 @@ import { amateurRadioProxy } from '../../../server/providers/amateur-radio.js';
 import { createAmateurRadioSource } from './source.js';
 import { decodePosition } from '../../../server/providers/amateur-radio/aprs.js';
 
-const device = { id: 234221, callsign: 'GB3XR', lat: 53.39678, lng: -2.06361 };
+const NOW = Date.now();
+const device = {
+  id: 234221,
+  callsign: 'GB3XR',
+  lat: 53.39678,
+  lng: -2.06361,
+  last_seen: new Date(NOW - 60_000)
+    .toISOString()
+    .slice(0, 19)
+    .replace('T', ' '),
+};
 const kmz = zipSync({
   'doc.kml': strToU8(`<kml><Document><Placemark><name>G8CZE-L</name>
   <description>Manchester (430.050) 886150</description>
@@ -158,12 +168,148 @@ test('activity route is fixed and independent of directories in dev and preview'
   }
 });
 
+test('node route joins live activity to the full geolocated directory without widening the hourly directory view', async () => {
+  for (const preview of [false, true]) {
+    let calls = 0;
+    const call = harness(
+      {
+        now: () => NOW,
+        fetchImpl: async (url) => {
+          calls++;
+          return String(url).includes('brandmeister')
+            ? Response.json([
+                device,
+                {
+                  ...device,
+                  id: 2,
+                  last_seen: new Date(NOW - 7200_000)
+                    .toISOString()
+                    .slice(0, 19)
+                    .replace('T', ' '),
+                },
+                { ...device, id: 3, last_seen: null },
+              ])
+            : new Response(kmz);
+        },
+        activity: {
+          getNodeSnapshot: async (directory) => {
+            assert.equal(directory.size, 3);
+            assert.equal(directory.get('3').lastSeenAt, null);
+            return {
+              status: 'live',
+              error: null,
+              fetchedAt: NOW,
+              observedSince: NOW,
+              rows: ['2', '3'].map((id) => ({
+                ...directory.get(id),
+                lastHeardAt: NOW,
+              })),
+            };
+          },
+          close() {},
+        },
+      },
+      preview,
+    );
+    const heard = await call('GET', '/nodes');
+    assert.equal(heard.status, 200);
+    assert.equal(calls, 1, 'node polling does not fetch EchoLink');
+    assert.equal(heard.body.rows.length, 2);
+    assert.equal(heard.body.directoryFetchedAt, NOW);
+    const hourly = await call();
+    assert.deepEqual(
+      hourly.body.networks[0].rows.map((r) => r.nodeId),
+      ['234221'],
+    );
+    assert.equal(calls, 2, 'directory routes share the BrandMeister cache');
+    assert.equal((await call('POST', '/nodes')).status, 405);
+    assert.equal((await call('GET', '/nodes?url=evil')).status, 400);
+    const source = createAmateurRadioSource({
+      fetchImpl: async (url, { signal }) => {
+        assert.equal(url, '/api/amateur-radio/nodes');
+        signal.throwIfAborted();
+        return Response.json(heard.body);
+      },
+    });
+    assert.deepEqual(await source.getNodeActivity(), heard.body);
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      source.getNodeActivity({ signal: controller.signal }),
+      { name: 'AbortError' },
+    );
+  }
+});
+
+test('node source validates timestamps, identities, error state and HTTP failures', async () => {
+  const data = {
+    status: 'live',
+    error: null,
+    fetchedAt: NOW,
+    observedSince: NOW,
+    directoryFetchedAt: NOW,
+    directoryStale: false,
+    directoryError: null,
+    rows: [
+      {
+        id: 'brandmeister:234221',
+        network: 'brandmeister',
+        nodeId: '234221',
+        callsign: 'GB3XR',
+        description: '',
+        lat: 53.39,
+        lon: -2.06,
+        lastSeenAt: null,
+        lastSeen: null,
+        lastHeardAt: NOW,
+      },
+    ],
+  };
+  for (const invalid of [
+    {},
+    { ...data, observedSince: null },
+    { ...data, observedSince: NOW + 1 },
+    { ...data, rows: [data.rows[0], data.rows[0]] },
+    { ...data, rows: [{ ...data.rows[0], lastHeardAt: NOW + 1 }] },
+    { ...data, rows: [{ ...data.rows[0], lastHeardAt: null }] },
+    { ...data, rows: [{ ...data.rows[0], network: 'echolink' }] },
+    { ...data, rows: [{ ...data.rows[0], lat: 100 }] },
+    { ...data, status: 'error', error: 'offline' },
+  ]) {
+    await assert.rejects(
+      createAmateurRadioSource({
+        fetchImpl: async () => Response.json(invalid),
+      }).getNodeActivity(),
+      /Invalid BrandMeister node/,
+    );
+  }
+  const failed = {
+    ...data,
+    status: 'error',
+    error: 'offline',
+    observedSince: null,
+    rows: [],
+  };
+  assert.deepEqual(
+    await createAmateurRadioSource({
+      fetchImpl: async () => Response.json(failed),
+    }).getNodeActivity(),
+    failed,
+  );
+  await assert.rejects(
+    createAmateurRadioSource({
+      fetchImpl: async () => new Response('', { status: 502 }),
+    }).getNodeActivity(),
+    /HTTP 502/,
+  );
+});
+
 test('dev and preview serve the real schema and cache/coalesce both directories', async () => {
   for (const preview of [false, true]) {
     let calls = 0;
     const call = harness(
       {
-        now: () => 1000,
+        now: () => NOW,
         fetchImpl: async (url) => {
           calls++;
           return upstream(url);
@@ -175,6 +321,8 @@ test('dev and preview serve the real schema and cache/coalesce both directories'
     assert.equal(a.status, 200);
     assert.deepEqual(a.body, b.body);
     assert.equal(calls, 2);
+    assert.equal(a.body.area.scope, 'worldwide');
+    assert.equal(a.body.aprsArea.name, 'Manchester');
     assert.equal(a.body.networks[0].rows[0].callsign, 'GB3XR');
     assert.equal(a.body.networks[1].rows[0].callsign, 'G8CZE-L');
     await call();
@@ -201,7 +349,7 @@ test('only GET of the fixed route is allowed; no supplied upstream or control ac
 });
 
 test('partial failure and expired stale cache are explicit, not empty success', async () => {
-  let clock = 1000;
+  let clock = NOW;
   let fail = false;
   const call = harness({
     now: () => clock,
@@ -210,6 +358,80 @@ test('partial failure and expired stale cache are explicit, not empty success', 
         throw new Error('offline');
       return upstream(url);
     },
+  });
+
+  test('BrandMeister cutoff is rechecked on fresh cache hits and stale-on-error responses', async () => {
+    let clock = NOW,
+      calls = 0,
+      fail = false;
+    const nearCutoff = {
+      ...device,
+      last_seen: new Date(NOW - 3599_000)
+        .toISOString()
+        .slice(0, 19)
+        .replace('T', ' '),
+    };
+    const call = harness({
+      now: () => clock,
+      fetchImpl: async (url) => {
+        calls++;
+        if (String(url).includes('brandmeister')) {
+          if (fail) throw new Error('test offline');
+          return Response.json([nearCutoff]);
+        }
+        return new Response(kmz);
+      },
+    });
+    assert.equal((await call()).body.networks[0].rows.length, 1);
+    clock += 1001;
+    assert.equal((await call()).body.networks[0].rows.length, 0);
+    assert.equal(
+      calls,
+      2,
+      'eligibility changes even while the directory cache is fresh',
+    );
+    clock += 300_000;
+    fail = true;
+    const stale = (await call()).body.networks[0];
+    assert.equal(stale.stale, true);
+    assert.equal(
+      stale.rows.length,
+      0,
+      'stale cache must not prolong the last-seen eligibility window',
+    );
+  });
+
+  test('browser source accepts complete worldwide catalogues and rejects or filters ineligible BrandMeister timestamps', async () => {
+    const initial = (await harness()()).body;
+    const template = initial.networks[0].rows[0];
+    initial.networks[0].rows = Array.from({ length: 2501 }, (_, i) => ({
+      ...template,
+      id: `brandmeister:${i + 1}`,
+      nodeId: String(i + 1),
+      lat: -33.87,
+      lon: 151.21,
+    }));
+    let payload = initial;
+    const source = createAmateurRadioSource({
+      fetchImpl: async () => Response.json(payload),
+    });
+    const global = await source.getSnapshot();
+    assert.equal(global.networks[0].rows.length, 2501);
+    assert.equal(global.networks[0].rows[0].lon, 151.21);
+    for (const lastSeenAt of [Date.now() - 3600_001, Date.now() + 60_000]) {
+      payload = structuredClone(initial);
+      payload.networks[0].rows = [
+        {
+          ...template,
+          lastSeenAt,
+          lastSeen: new Date(lastSeenAt).toISOString(),
+        },
+      ];
+      assert.equal((await source.getSnapshot()).networks[0].rows.length, 0);
+    }
+    payload = structuredClone(initial);
+    delete payload.networks[0].rows[0].lastSeenAt;
+    await assert.rejects(source.getSnapshot(), /Invalid amateur radio/);
   });
   await call();
   clock += 300_001;

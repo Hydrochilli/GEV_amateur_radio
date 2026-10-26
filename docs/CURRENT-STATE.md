@@ -34,7 +34,20 @@ Network/contributing stations under CC BY-SA 4.0 with a filtering/summarising
 adaptation notice.
 
 Amateur Radio Preview is an opt-in Utilities layer (`amateur-radio`, share token
-`3`) covering nodes within 100 km of Manchester. The fixed-origin read-only
+`3`) with worldwide BrandMeister/EchoLink directories and a separate Manchester
+100 km APRS feed. The default BrandMeister view includes only valid, nonfuture UTC directory
+last-seen timestamps within the preceding hour; its **BrandMeister: 60 min**
+chip switches to **5 min live**: public Last Heard activity matched by repeater-link
+`ContextID` and `LinkCall` to directory node ID and callsign, with five-minute expiry.
+The full bounded geolocated directory supplies positions even when its last-seen
+timestamps lag; hourly responses remain filtered. Unknown nodes, bridges and
+identity mismatches are excluded, with no caller-ID or talkgroup-area location
+inference. Widening restores eligible cached hourly dots without refetching. The choice survives
+layer disable/enable, resets on page reload, and leaves EchoLink, APRS and
+playing audio unchanged. Hourly mode is directory last-seen data, not confirmed RF
+transmission activity; live mode shows recent public call activity at listed node
+coordinates, not operator GPS or proof a call is still transmitting.
+The fixed-origin read-only
 `/api/amateur-radio` provider runs in dev and production preview, caches
 BrandMeister's documented device directory for five minutes and EchoLink's
 official KMZ for three minutes, and coalesces concurrent loads. Fetches and
@@ -42,8 +55,9 @@ decoded KML are size-bounded; XML declarations are rejected and provider
 descriptions are displayed as text. No credentials or audio are relayed.
 Network failures are surfaced independently; explicitly stale cached records
 expire after an hour. Amber/blue stationary points expose a single selected
-world-overlay card and official-client launch chips. BrandMeister entries are
-recently seen devices, not live operator positions or transmission activity;
+world-overlay card and official-client launch chips. Hourly BrandMeister entries are
+devices seen within the last hour, not live operator positions or confirmed
+transmission activity;
 EchoLink entries are online-directory snapshots with owner-supplied positions.
 Hoseline live callsign/talkgroup activity and audio now use a lazy official
 cross-origin iframe panel; EchoLink is loaded only after an existing-login
@@ -52,17 +66,74 @@ connections stay manual. Close, switch, disable and destroy unload the client;
 external fallbacks stop the embedded client first. CSP admits only these two
 additional exact frame origins, not their scripts in the parent page.
 
+Worldwide directory rows no longer have a Manchester-distance admission filter
+or silent 2,000-record truncation. Full bounded catalogues (up to 50,000 rows per
+provider) are validated with an explicit error on overflow. BrandMeister's
+rolling last-seen cutoff applies on every server response, including cached
+and stale responses, and again on browser ingestion. One layer-owned expiry
+timer removes ineligible displayed markers and updates legend counts even if
+the network is offline. Disable/destroy cancel that timer, and reenable
+rechecks retained data. Directory refreshes reuse unchanged entities instead
+of destroying and recreating thousands of points. The global directory scope
+and unchanged Manchester APRS area are reported separately in the API.
+
+The fixed GET `/api/amateur-radio/nodes` route shares the existing first-party
+Last Heard socket with audio selection. Layer-owned ten-second polling maintains
+a 30-second map collection lease; the socket closes after 90 seconds without
+requests. Verified node IDs and activity timestamps have a separate five-minute
+retention map, not the 512-session audio sample limit. Ongoing observations use
+receipt time; ended calls use stop time. Status, collection start time, empty
+windows, failures and stale directory positions are disclosed explicitly.
+There is no guaranteed historical backfill; gaps restart the observation window.
+Disabling aborts browser acquisition and timers; late responses cannot revive
+the layer. Live failures never substitute older directory dots or retune audio.
+
 BrandMeister now opens as a compact bottom-edge audio dock, with an expandable
 official Hoseline client. Minimise/show preserves that same frame and playback;
 close, client switch, layer disable and destroy unload it. The Listen latest
 action samples public first-party Last Heard group-call events for two seconds
 after connection and uses Hoseline's `?subscribe=<TG>` link. Selection happens
-once per explicit action, not continuously: currently transmitting UK groups,
-then English-priority groups, then others, newest within the tier. Only if no
-groups are transmitting are calls ended within three minutes considered.
+once per explicit action, not continuously. Without a matching curated intended
+area, markers outside the UK rank transmitting groups by the nearest associated country boundary to
+the marker, then activity recency. With no activity from the marker's country,
+the next nearest available country wins; unassigned/worldwide groups follow
+mapped countries. UK markers without an area match and unlocated actions retain UK,
+English-priority, then other groups. Only if no groups are transmitting are
+calls ended within three minutes considered, with the same geographic ranking.
+Marker coordinates, not the node ID prefix or map centre, provide the reference;
+changing markers cancels pending selection. Three-digit MCC country associations
+are best effort, with shared codes resolved to their nearest associated country.
+Bundled Natural Earth boundaries are loaded lazily through the existing shared
+loader, with great-circle boundary distances rather than country centroids.
 English classification is a documented best-effort shortlist/name match, not
 audio-language detection. Browser playback status stays owned by Hoseline and
 is not falsely presented as confirmed listening.
+
+A bundled 84-entry intended-area directory now precedes country fallback for
+clicked markers: matching local groups, matching regions, then country rules.
+The seed covers four Canadian/UK city groups, UK regions, US states/DC,
+Canadian provinces/territories and selected French areas; coverage is explicitly
+partial. Each entry records an official BrandMeister source and a manual
+2026-10-26 review date. CC0 Wikidata city points use the user-approved inclusive
+25 km proximity heuristic; regions use bundled administrative boundaries,
+including explicit unions for North West England and Ile-de-France.
+These are approximate intended areas, never speaker positions or RF coverage.
+Matching local centres are ranked by distance; regional ties use recency.
+Known out-of-area groups lose otherwise-equal country-fallback ties rather
+than masquerading as nationwide groups. Transmitting-first and freshness rules
+are unchanged, as is one-shot rather than continuous retuning.
+A collapsed searchable directory in the player exposes each source, review
+date and city-point provenance; the selected group also shows intended-area
+provenance. No live name geocoding is used. Administrative lookup IDs are
+validated rather than partially or silently dropping missing boundaries.
+
+Frame errors and a 30-second navigation timeout expose a retry action that
+recreates the selected client without changing talkgroup. Manual selection can
+replace a failed frame; successful streams are preserved. Timers and frame
+listeners are removed on retune, stop, switch and destroy. An observed blank
+frame persisted in VS Code's integrated browser despite retries; the user
+confirmed the player works in a regular Chrome/Edge window. Use that browser
+for the app, or the official-site fallback, if the integrated frame stalls.
 
 The receive-only `/api/amateur-radio/activity` route coalesces samples using
 one lazy Socket.IO connection to the public `/lh` version-2 service used by

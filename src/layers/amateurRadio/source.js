@@ -1,10 +1,90 @@
 import { readResponseJsonCapped } from '../../sources/httpBody.js';
 import { isActivitySnapshot } from '../../sources/brandmeisterActivity.js';
+import {
+  MAX_DIRECTORY_ROWS,
+  MAX_DIRECTORY_BYTES,
+  isRecentBrandmeister,
+} from '../../sources/amateurRadioDirectory.js';
+
+function isDirectoryNode(row, network, allowUnknownLastSeen = false) {
+  return Boolean(
+    row &&
+    row.network === network &&
+    /^\d{1,12}$/.test(row.nodeId) &&
+    row.id === `${network}:${row.nodeId}` &&
+    typeof row.callsign === 'string' &&
+    typeof row.description === 'string' &&
+    (network !== 'brandmeister' ||
+      (allowUnknownLastSeen &&
+        row.lastSeenAt === null &&
+        row.lastSeen === null) ||
+      (Number.isSafeInteger(row.lastSeenAt) &&
+        row.lastSeenAt > 0 &&
+        typeof row.lastSeen === 'string' &&
+        Date.parse(row.lastSeen) === row.lastSeenAt)) &&
+    Number.isFinite(row.lat) &&
+    Number.isFinite(row.lon) &&
+    Math.abs(row.lat) <= 90 &&
+    Math.abs(row.lon) <= 180,
+  );
+}
 
 export function createAmateurRadioSource({
   fetchImpl = (...args) => globalThis.fetch(...args),
 } = {}) {
   return {
+    async getNodeActivity({ signal } = {}) {
+      signal = AbortSignal.any([
+        ...(signal ? [signal] : []),
+        AbortSignal.timeout(40_000),
+      ]);
+      const response = await fetchImpl('/api/amateur-radio/nodes', { signal });
+      if (!response.ok)
+        throw new Error(
+          `BrandMeister node activity unavailable (HTTP ${response.status})`,
+        );
+      const snapshot = await readResponseJsonCapped(
+        response,
+        MAX_DIRECTORY_BYTES,
+        signal,
+      );
+      if (
+        !snapshot ||
+        !['live', 'error'].includes(snapshot.status) ||
+        !(snapshot.error === null || typeof snapshot.error === 'string') ||
+        !Number.isSafeInteger(snapshot.fetchedAt) ||
+        snapshot.fetchedAt <= 0 ||
+        !(
+          snapshot.observedSince === null ||
+          (Number.isSafeInteger(snapshot.observedSince) &&
+            snapshot.observedSince > 0 &&
+            snapshot.observedSince <= snapshot.fetchedAt)
+        ) ||
+        (snapshot.status === 'live' &&
+          (snapshot.error !== null || snapshot.observedSince === null)) ||
+        (snapshot.status === 'error' && !snapshot.error) ||
+        !Number.isFinite(snapshot.directoryFetchedAt) ||
+        typeof snapshot.directoryStale !== 'boolean' ||
+        !(
+          snapshot.directoryError === null ||
+          typeof snapshot.directoryError === 'string'
+        ) ||
+        !Array.isArray(snapshot.rows) ||
+        snapshot.rows.length > MAX_DIRECTORY_ROWS ||
+        (snapshot.status !== 'live' && snapshot.rows.length !== 0) ||
+        new Set(snapshot.rows.map((row) => row?.id)).size !==
+          snapshot.rows.length ||
+        snapshot.rows.some(
+          (row) =>
+            !isDirectoryNode(row, 'brandmeister', true) ||
+            !Number.isSafeInteger(row.lastHeardAt) ||
+            row.lastHeardAt <= 0 ||
+            row.lastHeardAt > snapshot.fetchedAt,
+        )
+      )
+        throw new Error('Invalid BrandMeister node activity snapshot');
+      return snapshot;
+    },
     async getActivity({ signal } = {}) {
       signal = AbortSignal.any([
         ...(signal ? [signal] : []),
@@ -106,7 +186,7 @@ export function createAmateurRadioSource({
         );
       const snapshot = await readResponseJsonCapped(
         response,
-        4 * 1024 * 1024,
+        MAX_DIRECTORY_BYTES,
         signal,
       );
       if (
@@ -121,32 +201,31 @@ export function createAmateurRadioSource({
           (network) =>
             !network ||
             !Array.isArray(network.rows) ||
-            network.rows.length > 2000 ||
+            network.rows.length > MAX_DIRECTORY_ROWS ||
+            new Set(network.rows.map((row) => row?.id)).size !==
+              network.rows.length ||
             !(
               network.fetchedAt === null || Number.isFinite(network.fetchedAt)
             ) ||
             typeof network.stale !== 'boolean' ||
             !(network.error === null || typeof network.error === 'string') ||
-            network.rows.some(
-              (row) =>
-                !row ||
-                row.network !== network.id ||
-                !/^\d{1,12}$/.test(row.nodeId) ||
-                row.id !== `${network.id}:${row.nodeId}` ||
-                typeof row.callsign !== 'string' ||
-                typeof row.description !== 'string' ||
-                !Number.isFinite(row.distanceKm) ||
-                row.distanceKm < 0 ||
-                row.distanceKm > 100 ||
-                !Number.isFinite(row.lat) ||
-                !Number.isFinite(row.lon) ||
-                Math.abs(row.lat) > 90 ||
-                Math.abs(row.lon) > 180,
-            ),
+            network.rows.some((row) => !isDirectoryNode(row, network.id)),
         )
       )
         throw new Error('Invalid amateur radio directory snapshot');
-      return snapshot;
+      return {
+        ...snapshot,
+        networks: snapshot.networks.map((network) =>
+          network.id === 'brandmeister'
+            ? {
+                ...network,
+                rows: network.rows.filter((row) =>
+                  isRecentBrandmeister(row, Date.now()),
+                ),
+              }
+            : network,
+        ),
+      };
     },
   };
 }

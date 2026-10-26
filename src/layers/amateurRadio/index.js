@@ -1,5 +1,10 @@
 import * as Cesium from 'cesium';
 import {
+  BRANDMEISTER_MAX_AGE,
+  BRANDMEISTER_SHORT_AGE,
+  isRecentBrandmeister,
+} from '../../sources/amateurRadioDirectory.js';
+import {
   NETWORKS,
   CLIENT_LINKS,
   POSITION_COLOR,
@@ -22,6 +27,7 @@ export function createAmateurRadioLayer({
   player,
   schedule = setTimeout,
   cancel = clearTimeout,
+  now = () => Date.now(),
   requestRender = () => {},
 } = {}) {
   if (typeof source?.getSnapshot !== 'function')
@@ -39,13 +45,28 @@ export function createAmateurRadioLayer({
   let rowControlsListener = null;
   let positionRequest = null;
   let positionTimer = null;
+  let expiryTimer = null;
   let positions = null;
+  let liveOnly = false;
+  let nodeActivity = null;
+  let nodeRequest = null;
+  let nodeTimer = null;
   const rows = new Map();
   const notify = () => rowControlsListener?.();
 
-  function openClient(client, callsign) {
+  function isVisibleBrandmeister(row, time) {
+    return liveOnly
+      ? Number.isSafeInteger(row.lastHeardAt) &&
+          row.lastHeardAt > 0 &&
+          row.lastHeardAt <= time &&
+          time - row.lastHeardAt <= BRANDMEISTER_SHORT_AGE
+      : isRecentBrandmeister(row, time);
+  }
+
+  function openClient(client, callsign, location) {
     if (!enabled) return false;
-    if (player) player.show(client, callsign);
+    if (player && location) player.show(client, callsign, location);
+    else if (player) player.show(client, callsign);
     else openExternal?.(CLIENT_LINKS[client]);
     return Boolean(player || openExternal);
   }
@@ -53,14 +74,14 @@ export function createAmateurRadioLayer({
   function activateNode(row) {
     if (!enabled || row.network === 'aprs') return false;
     if (row.network === 'echolink') return openClient('echolink', row.callsign);
-    return openClient('hoseline');
+    return openClient('hoseline', undefined, { lat: row.lat, lon: row.lon });
   }
 
   function syncPositions() {
     const currentRows = positions.rows.filter(
       (row) =>
-        Date.now() - row.receivedAt <= 900_000 &&
-        (row.reportedAt === null || Date.now() - row.reportedAt <= 900_000),
+        now() - row.receivedAt <= 900_000 &&
+        (row.reportedAt === null || now() - row.reportedAt <= 900_000),
     );
     const ids = new Set(currentRows.map((row) => row.id));
     dataSource.entities.suspendEvents();
@@ -98,6 +119,135 @@ export function createAmateurRadioLayer({
     }
     if (selectedId?.startsWith('aprs:')) publishCard();
     requestRender();
+  }
+
+  function scheduleExpiry() {
+    if (expiryTimer !== null) cancel(expiryTimer);
+    expiryTimer = null;
+    if (!enabled) return;
+    const time = now();
+    let delay = Infinity;
+    for (const row of rows.values())
+      if (row.network === 'brandmeister')
+        delay = Math.min(
+          delay,
+          (liveOnly ? row.lastHeardAt : row.lastSeenAt) +
+            (liveOnly ? BRANDMEISTER_SHORT_AGE : BRANDMEISTER_MAX_AGE) -
+            time +
+            1,
+        );
+    if (!Number.isFinite(delay)) return;
+    expiryTimer = schedule(
+      () => {
+        expiryTimer = null;
+        if (!enabled || !dataSource) return;
+        dataSource.entities.suspendEvents();
+        try {
+          for (const [id, row] of rows)
+            if (
+              row.network === 'brandmeister' &&
+              !isVisibleBrandmeister(row, now())
+            ) {
+              rows.delete(id);
+              dataSource.entities.removeById(`${PREFIX}${id}`);
+            }
+        } finally {
+          dataSource.entities.resumeEvents();
+        }
+        if (selectedId && !rows.has(selectedId)) clearSelection();
+        scheduleExpiry();
+        notify();
+        requestRender();
+      },
+      Math.max(1, delay),
+    );
+    expiryTimer.unref?.();
+  }
+
+  function syncDirectories() {
+    if (!dataSource) return;
+    const incoming = new Map();
+    const time = now();
+    for (const network of snapshot?.networks || [])
+      for (const row of network.rows)
+        if (
+          row.network !== 'brandmeister' ||
+          (!liveOnly && isVisibleBrandmeister(row, time))
+        )
+          incoming.set(row.id, row);
+    if (liveOnly && nodeActivity?.status === 'live')
+      for (const row of nodeActivity.rows)
+        if (isVisibleBrandmeister(row, time)) incoming.set(row.id, row);
+    dataSource.entities.suspendEvents();
+    try {
+      for (const [id, row] of rows)
+        if (row.network !== 'aprs' && !incoming.has(id)) {
+          rows.delete(id);
+          dataSource.entities.removeById(`${PREFIX}${id}`);
+        }
+      for (const [id, row] of incoming) {
+        const previous = rows.get(id);
+        rows.set(id, row);
+        const entity = dataSource.entities.getById(`${PREFIX}${id}`);
+        if (!entity) {
+          dataSource.entities.add({
+            id: `${PREFIX}${id}`,
+            position: Cesium.Cartesian3.fromDegrees(row.lon, row.lat),
+            point: {
+              pixelSize: 9,
+              color: Cesium.Color.fromCssColorString(
+                NETWORKS[row.network].color,
+              ),
+              outlineColor: Cesium.Color.BLACK,
+              outlineWidth: 1,
+              heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            },
+          });
+        } else if (previous.lat !== row.lat || previous.lon !== row.lon) {
+          entity.position = Cesium.Cartesian3.fromDegrees(row.lon, row.lat);
+        }
+      }
+    } finally {
+      dataSource.entities.resumeEvents();
+    }
+    scheduleExpiry();
+    if (selectedId) publishCard();
+    requestRender();
+  }
+
+  async function pollNodeActivity() {
+    if (!enabled || !dataSource || !source.getNodeActivity || nodeRequest)
+      return;
+    const current = new AbortController();
+    nodeRequest = current;
+    try {
+      const next = await source.getNodeActivity({ signal: current.signal });
+      if (current.signal.aborted || nodeRequest !== current || !enabled) return;
+      nodeActivity = next;
+      if (liveOnly) syncDirectories();
+    } catch (cause) {
+      if (current.signal.aborted || nodeRequest !== current || !enabled) return;
+      console.warn('[Data:AmateurRadio] Node activity refresh failed:', cause);
+      nodeActivity = {
+        status: 'error',
+        error: cause.message || 'BrandMeister node activity unavailable',
+        rows: [],
+        observedSince: null,
+      };
+      if (liveOnly) syncDirectories();
+    } finally {
+      if (nodeRequest === current) {
+        nodeRequest = null;
+        if (enabled) {
+          nodeTimer = schedule(() => {
+            nodeTimer = null;
+            void pollNodeActivity();
+          }, 10_000);
+          nodeTimer.unref?.();
+        }
+        notify();
+      }
+    }
   }
 
   async function pollPositions() {
@@ -146,7 +296,14 @@ export function createAmateurRadioLayer({
 
   function publishCard() {
     const row = rows.get(selectedId);
-    const network = snapshot?.networks.find((item) => item.id === row?.network);
+    const network =
+      row?.network === 'brandmeister' && liveOnly && nodeActivity
+        ? {
+            fetchedAt: nodeActivity.directoryFetchedAt,
+            stale: nodeActivity.directoryStale,
+            error: nodeActivity.directoryError,
+          }
+        : snapshot?.networks.find((item) => item.id === row?.network);
     if (!row || (row.network !== 'aprs' && !network)) return clearSelection();
     const height = viewer.scene.globe?.getHeight(
       Cesium.Cartographic.fromDegrees(row.lon, row.lat),
@@ -154,11 +311,15 @@ export function createAmateurRadioLayer({
     const entry = {
       ...(row.network === 'aprs'
         ? buildPositionCard(row, positions)
-        : buildNodeCard(row, {
-            ...network,
-            stale: network.stale || Boolean(refreshError),
-            error: network.error || refreshError,
-          })),
+        : buildNodeCard(
+            row,
+            {
+              ...network,
+              stale: network.stale || Boolean(refreshError),
+              error: network.error || refreshError,
+            },
+            now(),
+          )),
       position: Cesium.Cartesian3.fromDegrees(
         row.lon,
         row.lat,
@@ -232,8 +393,10 @@ export function createAmateurRadioLayer({
       if (dataSource) dataSource.show = true;
       overlayHost?.setVisible?.(ID, true);
       installHandler();
+      syncDirectories();
       if (positions && dataSource) syncPositions();
       void pollPositions();
+      void pollNodeActivity();
       requestRender();
     },
     disable() {
@@ -242,8 +405,15 @@ export function createAmateurRadioLayer({
       request = null;
       positionRequest?.abort();
       positionRequest = null;
+      nodeRequest?.abort();
+      nodeRequest = null;
+      nodeActivity = null;
+      if (nodeTimer !== null) cancel(nodeTimer);
+      nodeTimer = null;
       if (positionTimer !== null) cancel(positionTimer);
       positionTimer = null;
+      if (expiryTimer !== null) cancel(expiryTimer);
+      expiryTimer = null;
       player?.close();
       if (dataSource) dataSource.show = false;
       removeHandler();
@@ -267,38 +437,8 @@ export function createAmateurRadioLayer({
             .map((network) => network.error)
             .filter(Boolean)
             .join('; ') || null;
-        dataSource.entities.suspendEvents();
-        try {
-          for (const [id, row] of rows) {
-            if (row.network !== 'aprs') {
-              rows.delete(id);
-              dataSource.entities.removeById(`${PREFIX}${id}`);
-            }
-          }
-          for (const network of next.networks) {
-            for (const row of network.rows) {
-              rows.set(row.id, row);
-              dataSource.entities.add({
-                id: `${PREFIX}${row.id}`,
-                position: Cesium.Cartesian3.fromDegrees(row.lon, row.lat),
-                point: {
-                  pixelSize: 9,
-                  color: Cesium.Color.fromCssColorString(
-                    NETWORKS[row.network].color,
-                  ),
-                  outlineColor: Cesium.Color.BLACK,
-                  outlineWidth: 1,
-                  heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                },
-              });
-            }
-          }
-        } finally {
-          dataSource.entities.resumeEvents();
-        }
-        lastUpdate = Date.now();
-        if (selectedId) publishCard();
-        requestRender();
+        syncDirectories();
+        lastUpdate = now();
         return true;
       } catch (cause) {
         if (current.signal.aborted || request !== current || !enabled)
@@ -306,7 +446,7 @@ export function createAmateurRadioLayer({
         error = cause.message || 'Amateur radio directories unavailable';
         refreshError = error;
         console.warn('[Data:AmateurRadio] Refresh failed:', cause);
-        if (selectedId) publishCard();
+        syncDirectories();
         return false;
       } finally {
         if (request === current) {
@@ -338,11 +478,29 @@ export function createAmateurRadioLayer({
       const selected = rows.get(selectedId);
       const chips = [
         {
+          id: 'brandmeister-window',
+          label: liveOnly ? 'BrandMeister: 5 min live' : 'BrandMeister: 60 min',
+          title: liveOnly
+            ? 'Public call activity observed within five minutes, matched by node ID and node callsign to directory positions. Click for the 60-minute directory view. No operator GPS or RF coverage inferred.'
+            : 'Directory locations last seen within 60 minutes, not confirmed transmissions. Click for five minutes of verified Last Heard node activity. EchoLink, APRS and playing audio are unchanged.',
+          active: liveOnly,
+          disabled: false,
+          onClick: () => {
+            if (!enabled) return;
+            liveOnly = !liveOnly;
+            syncDirectories();
+            notify();
+          },
+        },
+        {
           id: 'hoseline',
           label: 'Listen latest',
           title:
-            'Compact BrandMeister audio dock: UK, English-priority, then other active talkgroups; no repeater connection',
-          onClick: () => openClient('hoseline'),
+            'Compact audio dock: selected markers prefer matching local/regional intended areas, then country priority; no repeater connection',
+          onClick: () =>
+            selected?.network === 'brandmeister'
+              ? activateNode(selected)
+              : openClient('hoseline'),
           disabled: !player && !openExternal,
         },
         {
@@ -368,7 +526,7 @@ export function createAmateurRadioLayer({
             selected.network === 'aprs'
               ? 'Show published position details'
               : selected.network === 'brandmeister'
-                ? 'Open BrandMeister audio dock; selection is network-wide, not this node'
+                ? 'Open audio dock using this marker for local/regional intended-area and country priority; not a connection to this node'
                 : `Open EchoLink Web and select ${selected.callsign} manually`,
           onClick: () =>
             selected.network === 'aprs'
@@ -386,9 +544,8 @@ export function createAmateurRadioLayer({
           ...Object.entries(NETWORKS).map(([id, network]) => ({
             label: network.label,
             color: network.color,
-            count:
-              snapshot?.networks.find((item) => item.id === id)?.rows.length ||
-              0,
+            count: [...rows.values()].filter((row) => row.network === id)
+              .length,
           })),
           {
             label: 'Published APRS positions',
@@ -398,19 +555,34 @@ export function createAmateurRadioLayer({
           },
         ],
         info: [
-          'Preview: within 100 km of Manchester. Click a marker for details.',
+          'Worldwide BrandMeister and EchoLink directories. APRS remains within 100 km of Manchester. Click a marker for details.',
           ...(snapshot?.networks || []).map((network) =>
             network.fetchedAt === null
               ? `${NETWORKS[network.id].label}: unavailable`
               : `${NETWORKS[network.id].label}: fetched ${Math.max(0, Math.floor((Date.now() - network.fetchedAt) / 60000))}m ago${network.stale ? ' (stale)' : ''}`,
           ),
           error,
-          'BM: seen within 24h, not live activity. EchoLink: online snapshot. Positions unverified.',
+          liveOnly
+            ? 'BM: verified Last Heard node activity within five minutes, not directory last-seen age. Unknown nodes and unmatched node callsigns are omitted. Locations are directory positions, not operator GPS or RF coverage.'
+            : 'BM: directory last seen within 60 minutes; expired, unknown and future timestamps excluded. Not confirmed radio transmissions.',
+          source.getNodeActivity
+            ? `Last Heard: ${nodeActivity?.status || 'connecting'}${nodeActivity?.observedSince ? `; collecting since ${new Date(nodeActivity.observedSince).toISOString()}. History builds while enabled; no complete five-minute backfill is promised` : ''}.`
+            : 'Last Heard node activity unavailable in this source adapter.',
+          nodeActivity?.error,
+          nodeActivity?.directoryStale
+            ? `Last Heard directory positions are stale: ${nodeActivity.directoryError}`
+            : null,
+          liveOnly &&
+          nodeActivity?.status === 'live' &&
+          ![...rows.values()].some((row) => row.network === 'brandmeister')
+            ? 'No verified mapped nodes heard in the current five-minute window; waiting for public activity.'
+            : null,
+          'EchoLink: online snapshot. Positions unverified.',
           source.getPositions
             ? `APRS: ${positions?.status || 'connecting'}; last published fixes, not guaranteed operators or moving GPS.`
             : 'APRS positions unavailable in this source adapter.',
           positions?.error,
-          'Listen latest prefers UK, English-priority, then other network-wide activity; it does not connect to a nearby repeater. Minimise the dock to keep the map visible and audio running. No automatic EchoLink login/connection; only one login. Embedded microphone blocked.',
+          'Selected BrandMeister markers prefer matching curated local intended areas (25 km city-centre rule), then administrative regions, then country priority. Initial directory: UK, US states/DC, Canada and selected French areas; other locations retain country fallback. Intended areas and country prefixes are best effort, not talker locations, RF coverage or repeater connections. Minimise to keep audio running. No automatic EchoLink login/connection; only one login. Embedded microphone blocked.',
         ]
           .filter(Boolean)
           .join(' '),
@@ -420,13 +592,24 @@ export function createAmateurRadioLayer({
       return {
         count: rows.size,
         lastUpdate,
-        error,
-        loading: Boolean(request || positionRequest),
+        error: error || (liveOnly ? nodeActivity?.error : null) || null,
+        loading: Boolean(
+          request ||
+          positionRequest ||
+          (liveOnly && !nodeActivity && nodeRequest),
+        ),
         stale: Boolean(
           lastUpdate &&
           (refreshError || snapshot?.networks.some((network) => network.stale)),
         ),
-        partial: Boolean(snapshot?.networks.some((network) => network.error)),
+        partial: Boolean(
+          snapshot?.networks.some((network) => network.error) ||
+          (liveOnly && nodeActivity?.status !== 'live'),
+        ),
+        nodeActivityStatus:
+          nodeActivity?.status ||
+          (source.getNodeActivity ? 'connecting' : 'unavailable'),
+        nodeActivityError: nodeActivity?.error || null,
         positionStatus:
           positions?.status ||
           (source.getPositions ? 'connecting' : 'unavailable'),

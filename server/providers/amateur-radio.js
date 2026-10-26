@@ -11,6 +11,10 @@ import {
 } from './amateur-radio/records.js';
 import { createAprsReceiver } from './amateur-radio/aprs.js';
 import { createBrandmeisterActivity } from './amateur-radio/activity.js';
+import {
+  DIRECTORY_AREA,
+  isRecentBrandmeister,
+} from '../../src/sources/amateurRadioDirectory.js';
 
 const PROVIDERS = [
   {
@@ -19,7 +23,8 @@ const PROVIDERS = [
     ttl: 300_000,
     cap: 24 * 1024 * 1024,
     read: readResponseJsonCapped,
-    normalize: brandmeisterRows,
+    normalize: (payload, time) =>
+      brandmeisterRows(payload, time, { recentOnly: false }),
   },
   {
     id: 'echolink',
@@ -60,7 +65,7 @@ export function amateurRadioProxy({
             throw new Error(`HTTP ${response.status}`);
           }
           const payload = await provider.read(response, provider.cap, signal);
-          const rows = provider.normalize(payload);
+          const rows = provider.normalize(payload, now());
           const fetchedAt = now();
           const snapshot = {
             id: provider.id,
@@ -109,15 +114,40 @@ export function amateurRadioProxy({
       res.end(JSON.stringify(body));
     };
     if (req.method !== 'GET') return json(405, { error: 'method_not_allowed' });
-    if (!['/', '/positions', '/activity'].includes(req.url || '/'))
+    if (!['/', '/positions', '/activity', '/nodes'].includes(req.url || '/'))
       return json(400, { error: 'unsupported_radio_directory_request' });
     if (!allow(clientKey(req))) return json(429, { error: 'rate_limited' });
     if (req.url === '/activity') return json(200, await activity.getSnapshot());
     if (req.url === '/positions') return json(200, positions.getSnapshot());
-    const networks = await Promise.all(PROVIDERS.map(acquire));
+    if (req.url === '/nodes') {
+      const network = await acquire(PROVIDERS[0]);
+      if (network.fetchedAt === null)
+        return json(502, { error: network.error });
+      const snapshot = await activity.getNodeSnapshot(
+        new Map(network.rows.map((row) => [row.nodeId, row])),
+      );
+      return json(200, {
+        ...snapshot,
+        directoryFetchedAt: network.fetchedAt,
+        directoryStale: network.stale,
+        directoryError: network.error,
+      });
+    }
+    const networks = (await Promise.all(PROVIDERS.map(acquire))).map(
+      (network) =>
+        network.id === 'brandmeister'
+          ? {
+              ...network,
+              rows: network.rows.filter((row) =>
+                isRecentBrandmeister(row, now()),
+              ),
+            }
+          : network,
+    );
     const unavailable = networks.every((network) => network.fetchedAt === null);
     json(unavailable ? 502 : 200, {
-      area: AREA,
+      area: DIRECTORY_AREA,
+      aprsArea: AREA,
       networks,
       ...(unavailable
         ? { error: 'Amateur radio directories unavailable' }

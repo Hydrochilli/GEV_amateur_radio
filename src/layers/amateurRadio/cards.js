@@ -18,17 +18,23 @@ export function nodeLink(row) {
 
 export function buildNodeCard(row, network, now = Date.now()) {
   const details = [
-    `Node ${row.nodeId} | ${row.distanceKm.toFixed(1)} km from Manchester`,
+    `Node ${row.nodeId} | ${row.lat.toFixed(4)}, ${row.lon.toFixed(4)} (lat, lon)`,
     row.description,
     row.network === 'echolink'
       ? 'Online in directory snapshot; owner-supplied position'
-      : 'Seen within last day; not a live RF/activity report',
+      : row.lastHeardAt
+        ? 'Public Last Heard activity within five minutes; node ID and node callsign matched to this directory location'
+        : 'Directory last seen within one hour; not proof of a radio transmission',
   ].filter(Boolean);
   if (Number.isFinite(row.txMHz))
     details.push(`Listed TX: ${row.txMHz.toFixed(4)} MHz`);
   if (Number.isFinite(row.rxMHz))
     details.push(`Listed RX: ${row.rxMHz.toFixed(4)} MHz`);
   if (row.lastSeen) details.push(`Last seen: ${row.lastSeen} (UTC)`);
+  if (row.lastHeardAt)
+    details.push(
+      `Last public node activity: ${new Date(row.lastHeardAt).toISOString()} (UTC)`,
+    );
   if (network.fetchedAt !== null)
     details.push(
       `Directory fetched ${Math.max(0, Math.floor((now - network.fetchedAt) / 60000))}m ago${network.stale ? ' | STALE' : ''}`,
@@ -38,7 +44,7 @@ export function buildNodeCard(row, network, now = Date.now()) {
   details.push(
     row.network === 'echolink'
       ? `Click: EchoLink Web; select ${row.callsign} manually`
-      : 'Click: open BrandMeister audio dock; network-wide activity, not this node',
+      : 'Click: open audio dock; prefer matching local/regional intended areas, then country priority from this marker. Not a speaker fix or connection to this node.',
   );
   return {
     id: `amateur-radio-card:${row.id}`,

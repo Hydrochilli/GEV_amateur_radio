@@ -1,5 +1,10 @@
 import { unzipSync, strFromU8 } from 'fflate';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import {
+  MAX_DIRECTORY_ROWS,
+  brandmeisterLastSeen,
+  isRecentBrandmeister,
+} from '../../../src/sources/amateurRadioDirectory.js';
 
 export const AREA = Object.freeze({
   lat: 53.4808,
@@ -37,17 +42,23 @@ export function distanceKm(lat, lon) {
   return 6371 * 2 * Math.asin(Math.sqrt(Math.min(1, a)));
 }
 
-function localRows(rows) {
-  return rows
-    .map((row) => ({ ...row, distanceKm: distanceKm(row.lat, row.lon) }))
-    .filter((row) => row.distanceKm <= AREA.radiusKm)
-    .sort((a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id))
-    .slice(0, 2000);
+function directoryRows(rows) {
+  if (rows.size > MAX_DIRECTORY_ROWS)
+    throw new Error('Radio directory exceeds the supported record limit');
+  return [...rows.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export function brandmeisterRows(payload) {
+export function brandmeisterRows(
+  payload,
+  now = Date.now(),
+  { recentOnly = true } = {},
+) {
   if (!Array.isArray(payload))
     throw new Error('Invalid BrandMeister device directory');
+  if (payload.length > MAX_DIRECTORY_ROWS)
+    throw new Error(
+      'BrandMeister directory exceeds the supported record limit',
+    );
   const rows = new Map();
   for (const item of payload) {
     if (!item || typeof item !== 'object') continue;
@@ -55,7 +66,15 @@ export function brandmeisterRows(payload) {
     const callsign = text(item.callsign);
     const lat = number(item.lat);
     const lon = number(item.lng);
-    if (!/^\d{1,12}$/.test(id) || !callsign || !coordinates(lat, lon)) continue;
+    const parsedLastSeenAt = brandmeisterLastSeen(item.last_seen);
+    const lastSeenAt = parsedLastSeenAt > 0 ? parsedLastSeenAt : null;
+    if (
+      !/^\d{1,12}$/.test(id) ||
+      !callsign ||
+      !coordinates(lat, lon) ||
+      (recentOnly && !isRecentBrandmeister({ lastSeenAt }, now))
+    )
+      continue;
     rows.set(id, {
       id: `brandmeister:${id}`,
       network: 'brandmeister',
@@ -66,12 +85,11 @@ export function brandmeisterRows(payload) {
       description: text(item.city),
       txMHz: number(item.tx) > 0 ? number(item.tx) : null,
       rxMHz: number(item.rx) > 0 ? number(item.rx) : null,
-      lastSeen: /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(item.last_seen)
-        ? `${item.last_seen.replace(' ', 'T')}Z`
-        : null,
+      lastSeenAt,
+      lastSeen: lastSeenAt === null ? null : new Date(lastSeenAt).toISOString(),
     });
   }
-  return localRows([...rows.values()]);
+  return directoryRows(rows);
 }
 
 export function echolinkRows(bytes) {
@@ -139,5 +157,5 @@ export function echolinkRows(bytes) {
     }
   }
   visit(parsed.kml);
-  return localRows([...rows.values()]);
+  return directoryRows(rows);
 }

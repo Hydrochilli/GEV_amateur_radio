@@ -504,33 +504,93 @@ OpenSky can run fully anonymous (`OPENSKY_AUTH_MODE=anon`), or import OAuth cred
 </details>
 
 <details>
-<summary>Amateur radio preview (Manchester)</summary>
+<summary>Amateur radio preview (worldwide directories, local APRS)</summary>
 
-Enable **Amateur Radio Preview** under **DATA LAYERS → Utilities** and navigate
-to Manchester. Amber markers are BrandMeister repeaters/hotspots; blue markers
-are EchoLink RF links. The preview covers a 100 km radius around Manchester.
+Enable **Amateur Radio Preview** under **DATA LAYERS → Utilities** and explore
+the globe. Amber markers are BrandMeister repeaters/hotspots; blue markers
+are EchoLink RF links. Both directories cover the world; green APRS positions
+remain limited to 100 km around Manchester.
 Click a marker for its callsign, node ID, listed frequencies and directory age.
 The row also offers **Listen latest**, **Last Heard**, and **EchoLink Web** buttons.
 
-Directories are keyless. BrandMeister lists devices seen within the last day,
-not necessarily currently connected; EchoLink lists online links in a snapshot
+Directories are keyless. The default BrandMeister view shows only devices with a valid directory
+last-seen timestamp in the preceding 60 minutes (UTC), not necessarily currently
+connected or transmitting. Unknown, invalid and future timestamps are excluded.
+Use the **BrandMeister: 60 min** chip beneath **Amateur Radio** to toggle between
+the **60-minute directory view** and **5 min live** view. The live view uses
+public Last Heard call events, matching both the repeater/hotspot node ID
+(`ContextID`, repeater link type) and node callsign against directory locations.
+Unknown nodes, bridges, mismatches, private and flagged traffic are omitted;
+caller IDs and talkgroup areas are never used to guess a transmitter location.
+A node can appear in live mode even when its directory last-seen timestamp is old.
+Switching back restores eligible hourly directory dots without another fetch;
+EchoLink, APRS and playing audio are unchanged. The choice survives switching
+the layer off and on, but resets to 60 minutes when the page reloads.
+While the layer is enabled, a shared metadata-only Last Heard connection builds
+the observed history; the map polls it roughly every 10 seconds and expires
+nodes five minutes after their last observed activity. Collection starts on
+demand, so complete five-minute backfill is not promised. The row shows connection
+status, collection start time, no-match explanations and errors; an unavailable
+live feed never falls back to older directory dots. Disabling the layer stops
+browser polling; server collection leases expire after 30 seconds without map
+requests, and the shared socket closes after 90 seconds without any requests.
+This does not open audio or retune the player.
+The cutoff is rechecked on cached responses and markers expire independently
+of network refreshes, so an outage cannot keep an older device visible.
+EchoLink lists online links in a snapshot
 updated by the provider approximately every three minutes. Coordinates are
 owner-supplied and unverified. Directory markers do not indicate RF coverage,
-operator GPS positions, or current voice activity. Failed feeds are explicitly marked;
+operator GPS positions, or ongoing voice activity (a live-mode dot may represent
+a call that has already ended). Failed feeds are explicitly marked;
 cached records are labelled stale and retained for no more than an hour.
 
 **Live activity and audio:** **Listen latest** opens a compact bottom-edge
-BrandMeister dock and preselects one talkgroup from public activity. It prefers
-currently transmitting UK groups (234/235 prefixes), then English-priority
-groups, then others, selecting the newest transmission within that tier. If
-none are transmitting, it uses calls ended within the last three minutes;
-these may now be silent. English priority is best effort: TGs 91, 93, 95,
-913 and 3100, or a provider name containing "English", not speech detection.
-This network-wide audio selection is separate from the Manchester marker area.
+BrandMeister dock and preselects one talkgroup from public activity.
+**Clicked markers first consult a curated intended-area directory:** matching
+local groups, then matching regional groups, then the existing country rules.
+The initial **84 entries** cover London, selected Canadian cities, UK regions,
+all US states/DC, Canadian provinces/territories and selected French areas.
+This is a seed directory, not exhaustive worldwide coverage.
+
+Local matching uses the approved **25 km city-centre proximity rule**;
+regional matching uses bundled administrative boundaries or documented unions
+of them. Both are approximations of an **intended area**, not RF coverage,
+repeater catchment or a speaker's location. Newest activity breaks regional ties;
+overlapping local matches prefer the nearest city centre. Country fallback
+does not mistake known out-of-area groups for nationwide groups when an
+otherwise equal alternative is available.
+
+Use **Show player → Intended-area directory** to search by area, TG or country
+code and inspect official source links and review dates. City points link to
+their CC0 Wikidata records. Source review dates are not live verification.
+The selected group's intended-area match and source are also shown in the dock.
+No live geocoding or guesses from talkgroup names are used.
+
+**Without a matching intended area**, a BrandMeister marker outside the UK
+prefers the currently transmitting
+talkgroup whose associated country is nearest that marker: the marker's own
+country first, then the next nearest available country. Distance is to bundled
+country boundaries, not a capital or the map centre; newest activity breaks ties.
+The dock retains that marker for subsequent **Listen latest** actions.
+UK markers without an area match and actions without a selected marker retain
+UK (234/235 prefixes), English-priority, then other groups.
+If no groups are transmitting, the same ranking uses calls ended within three
+minutes; these may now be silent. Country associations use three-digit MCC
+prefixes and are best effort, not a talker's location. Shared prefixes use the
+nearest associated country; worldwide/unassigned groups follow mapped countries
+(or use newest activity if none are mapped). English priority is TGs
+91/93/95/913/3100 or a name containing "English", not speech detection.
+This does not connect to the clicked repeater or imply local RF reception.
 Use **Show player** and press Play inside Hoseline if the browser requires it.
 **Minimise to dock** keeps the same client and audio running while exposing
 the map. **Listen latest** retunes only when explicitly pressed; it does not
 continuously interrupt a conversation. **Choose manually** remains available.
+If navigation stalls for 30 seconds or fails, **Player failed: retry** reloads
+the same selected talkgroup; manual selection can also replace a failed player.
+If the player stays blank in VS Code's integrated browser, open the app in a
+regular Chrome or Edge window; this resolved the observed embedded-client stall.
+Alternatively use **Stop embed / open official site**. Frame navigation is not
+proof of audio.
 Activity errors are shown rather than silently selecting a default talkgroup.
 EchoLink opens an in-app panel but does not load its client until you acknowledge
 that other clients using your callsign are logged out and closed. It requires a
