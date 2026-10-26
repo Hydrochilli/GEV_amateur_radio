@@ -71,7 +71,7 @@ export function createIngestion({
         // partial outage visible at the layer control instead of presenting the
         // reduced catalog as a fully healthy refresh.
         layerState._lastError = failed.length
-          ? `${failed.length} CelesTrak group${failed.length === 1 ? '' : 's'} unavailable`
+          ? `${failed.length} CelesTrak group${failed.length === 1 ? '' : 's'} unavailable: ${failed.join(', ')}`
           : null;
 
         // Clear existing

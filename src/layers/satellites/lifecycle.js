@@ -15,6 +15,7 @@ export function createLifecycle({
     // Catalog data refresh; propagation remains preRender-owned.
 
     async init(viewer) {
+      parts.observations.clear();
       parts.catalog._abortActiveUpdates();
       clearFocusTarget('satellites');
       layerState._viewer = viewer;

@@ -12,6 +12,8 @@ import { weatherEffectsProxy } from './regional/weather-effects.js';
 import { cctvProxy } from './cctv.js';
 import { defaultSourceRoot } from './common/source-root.js';
 import { radioBrowserProxy } from './radio.js';
+import { amateurRadioProxy } from './amateur-radio.js';
+import { satnogsProxy } from './space/satnogs.js';
 import { gbfsProxy } from './gbfs.js';
 import { localReceiversProxy } from './local-receivers.js';
 import { transitProxy } from './transit.js';
@@ -47,6 +49,8 @@ function localProviderPlugins({ realtime } = {}) {
     weatherEffectsProxy(),
     cctvProxy({ sourceRoot: defaultSourceRoot }),
     radioBrowserProxy(),
+    amateurRadioProxy(),
+    satnogsProxy(),
     gbfsProxy(),
     localReceiversProxy(),
     transitProxy(),

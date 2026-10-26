@@ -13,6 +13,93 @@ How to read this:
 
 ## Live sources (fetched at runtime — not stored in this repo)
 
+The opt-in **Amateur Radio Preview** uses the
+[BrandMeister Halligan device directory](https://api.brandmeister.network/docs/)
+and [EchoLink's official geographic feed](https://www.echolink.org/googleInfo.htm).
+Only nodes within 100 km of Manchester are displayed. Public access to these
+directories is not a blanket redistribution licence; provider terms continue
+to apply. This preview caches directory data locally in server memory and does
+not bundle it or re-stream audio. Positions are owner-supplied and unverified.
+BrandMeister devices were seen within the last day, not necessarily currently
+online; EchoLink records reflect its online-directory snapshot. Official
+Hoseline and EchoLink Web are explicitly loaded official cross-origin clients
+inside an app-owned panel, not scraped APIs, relayed streams or automatic node
+connections. EchoLink requires acknowledgment that other clients are closed;
+embedded microphone/camera access is denied. Last Heard and fallbacks are
+external handoffs. Provider terms and authenticated account restrictions still
+apply; private use does not waive them. Attribution appears in-app.
+
+The BrandMeister **Listen latest** dock additionally receives public group-call
+metadata over the same first-party Last Heard Socket.IO endpoint used by
+Hoseline (`https://api.brandmeister.network`, `/lh`, version 2). It retains only
+bounded session/talkgroup IDs, talkgroup labels and activity/receipt timestamps,
+not callsigns, talker aliases, raw payloads or audio. A single server connection
+is opened on demand and closed after 90 seconds without selection requests;
+at most 512 sessions are kept in memory, without disk history. Private and
+flagged sessions are excluded. Completed calls expire after three minutes;
+reported active calls have a 15-minute maximum age and three-minute receipt
+freshness limit. Transmitting groups take precedence over ended calls.
+
+Selection prefers UK 234/235 prefixes, then the explicitly curated
+English-priority TGs 91/93/95/913/3100 or labels containing "English", then
+other groups; newest activity wins within each tier. This is not language
+detection, geographic reception or proof of audio availability. It is separate
+from the Manchester directory filter. Hoseline's first-party `?subscribe=<TG>`
+link preselects the result; browser autoplay rules still apply. Playback stays
+in the official client, which can be minimised without unloading its frame.
+The public activity protocol is provider-owned and may change; failures are
+disclosed, with manual selection retained. No BrandMeister credentials or
+hotspot-control API is used, and public availability is not a blanket
+redistribution licence.
+
+The **Satellites** layer also loads CelesTrak's
+[`amateur` orbital-element catalogue](https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=tle).
+These are green **AMATEUR RADIO** objects with SGP4-predicted positions,
+orbit paths and click-to-follow tracking, not APRS GPS reports. NORAD IDs are
+deduplicated across groups; stations take priority, followed by amateur radio
+and then the generic visual/navigation/geostationary groups. The ISS remains a
+station. The existing six-hour server cache and stale-on-error policy apply.
+Catalogue membership is not operational transponder status or confirmation of
+local reception. No RF hardware connection or continuous live downlink is added.
+
+For a selected amateur satellite or the ISS, the **SatNOGS** chip uses the
+[public SatNOGS Network API](https://docs.satnogs.org/projects/satnogs-network/en/stable/api.html)
+to show up to five completed observations from one bounded API page, filtered
+by exact NORAD ID and sorted by observation end time within those results.
+Observation windows and ground stations are displayed, not exact packet
+reception timestamps or proof of reception. Reported quality can be unvetted.
+Demodulated-file counts are not decoded engineering telemetry; the separate
+DB telemetry endpoint requires authentication and is not queried by this app.
+Optional recordings and waterfalls load directly from allowed official media
+hosts only after a user action; they may contain telemetry or noise. No audio
+is automatically played, relayed or stored by the app.
+
+SatNOGS observations and linked media retain the Network/contributing stations'
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) terms
+([provider attribution and licence](https://network.satnogs.org/about/)).
+Displayed data is adapted by filtering and summarising public records; keep
+attribution and share-alike terms with any redistributed adaptation. This is
+distinct from the app's MIT code licence. The keyless same-origin
+`/api/satnogs/<NORAD>` proxy is read-only: no scheduling, authentication or
+transmit functions. It caches successful lookups for 60 seconds and can return
+explicitly stale server records for up to 15 minutes after an upstream failure.
+The selected satellite refreshes once a minute; errors and stale timestamps
+remain visible, and no observation history is written to disk.
+
+Optional [APRS-IS](https://www.aprs-is.net/Connecting.aspx) position acquisition
+uses an operator's unique `APRS_IS_CALLSIGN` from their ignored `.env`, always
+`pass -1`, and TCP port 14580 with a fixed Manchester 100 km range filter.
+Only public station position reports are retained: no message contents, comments,
+objects, raw packets or do-not-archive positions. An in-memory 1,000-station /
+15-minute cap and idle shutdown bound retention; there is no disk history.
+Receipt timestamps are distinct from supplied UTC fix/report timestamps.
+Positions are self-published, not independently verified identities or GPS fixes,
+and may have ambiguity. BrandMeister APRS destination identifiers are disclosed
+as provenance, not authenticated proof of the person speaking on Hoseline.
+EchoLink's directory remains separate from moving positions. APRS-IS and the
+individual broadcasters retain their applicable terms; public accessibility is
+not a blanket redistribution licence.
+
 | Source                                                                | Used for                                                                                                                            | License / terms                                                                                                                                                                                                                                                                                                                                       | Attribution                                                                                                                                 |
 | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | **NOAA GFS (wind)** (`noaa-gfs-bdp-pds.s3.amazonaws.com`) | Global 10 m wind, optional 2 m temperature and mean sea-level pressure for Wind. Keyless; latest 6-hourly 0.25° cycle, byte-range GRIB2 reads, cached for an hour | U.S. public domain (NOAA); keyless via NOAA Open Data on AWS | "NOAA Global Forecast System (GFS)" (courtesy; not an endorsement) |

@@ -519,8 +519,20 @@ export function createControls({ state: layerState, services, parts, source }) {
             title,
             params: { catalog: active ? 'core' : 'dense' },
           },
+          ...(layerState._satnogs
+            ? [
+                {
+                  id: 'satnogs',
+                  label: 'SatNOGS',
+                  title: `Latest recorded observations for ${layerState._satnogs.name}; not a live downlink`,
+                  onClick: () => parts.observations.show(),
+                  disabled: !services.observations,
+                },
+              ]
+            : []),
         ],
         legend: satelliteClassLegend(_classTally()),
+        info: 'Green AMATEUR RADIO markers: CelesTrak catalogue, with positions predicted from orbital elements using SGP4. Click to follow and show an orbit. Catalogue membership does not confirm an operating radio or a receivable pass. The ISS remains STATION.',
       };
     },
 

@@ -65,6 +65,7 @@ export function createState({ services }) {
   // Click-to-track state
 
   state._trackedNorad = null;
+  state._satnogs = null;
 
   state._pendingTrackingRestore = null;
 

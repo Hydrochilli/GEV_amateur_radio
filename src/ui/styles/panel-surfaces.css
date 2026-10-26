@@ -228,3 +228,66 @@ body:is(.ui-clean-view, .recording-mode)
   visibility: hidden !important;
   pointer-events: none !important;
 }
+
+.amateur-radio-client[data-panel-surface],
+.satellite-observations[data-panel-surface] {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1200;
+  width: min(820px, calc(100vw - 32px));
+  height: min(650px, calc(100vh - 32px));
+  box-sizing: border-box;
+}
+
+.amateur-radio-client iframe {
+  display: block;
+  width: 100%;
+  height: 380px;
+  min-height: 260px;
+  border: 1px solid var(--glass-border);
+  background: #fff;
+}
+
+.amateur-radio-client p {
+  margin: 6px 0;
+}
+
+.amateur-radio-client[data-radio-dock] {
+  width: min(460px, calc(100vw - 32px));
+  height: min(560px, calc(100dvh - 32px));
+}
+
+.amateur-radio-client[data-radio-dock][data-minimized='true'] {
+  width: min(680px, calc(100vw - 32px));
+  height: auto;
+}
+
+.amateur-radio-client[data-radio-dock] [data-panel-header] {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.amateur-radio-client[data-radio-dock] [data-panel-body][hidden] {
+  display: none;
+}
+
+.amateur-radio-client .amateur-radio-dock-summary {
+  flex-basis: 100%;
+  order: 1;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.satellite-observations audio,
+.satellite-observations img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 8px 0;
+}
+
+.satellite-observations .panel-surface-control {
+  display: inline-block;
+  margin: 4px;
+}

@@ -226,4 +226,17 @@ test('the CSP admits the event media embeds, and no other script origin', async 
   }
   // X posts load in X's own frames.
   assert.ok(frames.includes('https://platform.twitter.com'));
+  for (const origin of [
+    'https://hose.brandmeister.network',
+    'https://webapp.echolink.org',
+  ]) {
+    assert.ok(frames.includes(origin));
+    assert.ok(
+      !scripts.includes(origin),
+      'client scripts belong only to the cross-origin frame',
+    );
+  }
+  assert.ok(
+    !frames.some((source) => source.includes('*') || source === 'https:'),
+  );
 });

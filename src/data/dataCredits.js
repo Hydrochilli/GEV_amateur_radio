@@ -133,6 +133,14 @@ export const DATA_CREDITS = [
       'Dr. T.S. Kelso',
   },
   {
+    key: 'satnogs',
+    html:
+      'Satellite observations: ' +
+      '<a href="https://network.satnogs.org" target="_blank" rel="noopener">SatNOGS Network</a> ' +
+      'and contributing ground stations. Data adapted by filtering and summarising public observations; ' +
+      '<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>.',
+  },
+  {
     key: 'launch-library-2',
     html:
       'Space mission launch, payload &amp; recovery metadata: ' +
@@ -343,6 +351,16 @@ export const DATA_CREDITS = [
   {
     key: 'warendorf-cctv',
     html: 'Webcam (Warendorf): <a href="https://www.warendorf.de/" target="_blank" rel="noopener">Stadt Warendorf</a> (courtesy)',
+  },
+  {
+    key: 'amateur-radio-preview',
+    html:
+      'Amateur radio directories and BrandMeister public talkgroup activity: ' +
+      '<a href="https://api.brandmeister.network/docs/" target="_blank" rel="noopener">BrandMeister</a> and ' +
+      '<a href="https://www.echolink.org/googleInfo.htm" target="_blank" rel="noopener">EchoLink</a> ' +
+      '(owner-supplied locations; courtesy). Published station reports: ' +
+      '<a href="https://www.aprs-is.net/" target="_blank" rel="noopener">APRS-IS</a> ' +
+      'and individual amateur radio broadcasters (unverified).',
   },
   {
     key: 'nsw-cctv',

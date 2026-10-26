@@ -54,17 +54,21 @@
     "mcp": "node server/mcp/stdio.js"
   },
   "dependencies": {
+    "@hamradio/aprs": "^1.4.2",
     "@jtarrio/signals": "^0.10.0",
     "@jtarrio/webrtlsdr": "^3.0.6",
     "@mapbox/vector-tile": "^3.0.0",
     "@meri-imperiumi/eccodes-wasm": "^2.48.2",
     "cesium": "^1.124.0",
     "egm96-universal": "^1.1.1",
+    "fast-xml-parser": "^5.3.0",
+    "fflate": "^0.8.2",
     "hls.js": "^1.7.3",
     "mapillary-js": "^4.1.2",
     "mgrs": "^2.1.0",
     "pbf": "^5.1.2",
-    "satellite.js": "^6.0.2"
+    "satellite.js": "^6.0.2",
+    "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
     "prettier": "3.9.6",

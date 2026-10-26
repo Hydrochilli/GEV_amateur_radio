@@ -43,7 +43,7 @@ async function settleChip(maxTicks = 50) {
 }
 
 /** Every CelesTrak group the catalog ingests, plus the dense-mode tag. */
-const INGESTED_GROUPS = ['stations', 'visual', 'gps-ops', 'glonass', 'galileo', 'geo', 'dense'];
+const INGESTED_GROUPS = ['stations', 'amateur', 'visual', 'gps-ops', 'glonass', 'galileo', 'geo', 'dense'];
 
 test('every ingested CelesTrak group resolves to a real class', () => {
   // Guards against drift: adding a group to CATALOG_GROUPS without classifying
@@ -67,6 +67,9 @@ test('the three GNSS constellations share one NAV color and split by subtype', (
 });
 
 test('class labels name the type, and the ISS names itself', () => {
+  assert.equal(satelliteClassLabel('amateur'), 'AMATEUR RADIO');
+  assert.equal(satelliteClassLabel('amateur', { isIss: true }), 'STATION · ISS');
+  assert.equal(satelliteClassColor('amateur'), SATELLITE_CLASSES.amateur.color);
   assert.equal(satelliteClassLabel('geo'), 'GEO');
   assert.equal(satelliteClassLabel('stations'), 'STATION');
   assert.equal(satelliteClassLabel('visual'), 'VISUAL');
@@ -151,12 +154,14 @@ test('tallying groups counts by class, folding the GNSS constellations together'
     'gps-ops', 'gps-ops', 'glonass', 'galileo',
     'geo', 'geo', 'geo',
     'stations',
+    'amateur', 'amateur',
     'visual',
     'dense', 'dense',
   ]);
   assert.equal(counts.nav, 4, 'all three GNSS groups fold into NAV');
   assert.equal(counts.geo, 3);
   assert.equal(counts.station, 1);
+  assert.equal(counts.amateur, 2);
   assert.equal(counts.visual, 1);
   assert.equal(counts.comms, 2);
 });

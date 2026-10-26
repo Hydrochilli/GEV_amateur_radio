@@ -204,6 +204,24 @@ Choose a first-run mission, or try these in order. The GIFs show Google Photorea
 
 5. **Track something in orbit.** Turn on **Satellites** and click the ISS — you ride along at orbital distance, orbit ring and all.
 
+   Amateur-radio satellites are included in the same layer: look for the green
+   **AMATEUR RADIO** legend and markers. Click a satellite to see its name,
+   NORAD ID, altitude, orbital-elements epoch and orbit, and follow its predicted
+   position. The ISS remains in **STATION**, even though it carries amateur
+   radio equipment. No API key or DENSE mode is needed. Positions are calculated
+   using SGP4 from CelesTrak's `amateur` catalogue; they are not live GPS reports.
+   Catalogue membership does not confirm that a transponder is working, a
+   frequency is active, or the satellite is receivable from your location.
+
+   With an amateur satellite or the ISS selected, click the **SatNOGS** chip
+   on the Satellites row. It shows recent completed observations, UTC times,
+   contributing ground stations, reported signal quality and demodulated-file
+   counts. Choose **Load recorded audio (not live)**, then press Play, or
+   **Show waterfall** when available. These are historical recordings, possibly
+   telemetry or noise, not continuous live audio or decoded engineering values.
+   No SatNOGS account/key is needed. Closing the panel, changing satellite or
+   disabling Satellites stops the recording.
+
 ![Tracking the ISS along its orbital path as it crosses over Ukraine](docs/media/14-iss-over-ukraine.gif)
 
 6. **Switch the optics.** Tap `1`–`7` — CRT, NVG, FLIR — and the whole live planet re-renders through a different sensor.
@@ -297,7 +315,7 @@ Twenty layers and map sources. **Seventeen have a keyless path.** Some offer add
 | ✈️ **Live Flights**         | 11,000+ live aircraft + route history                                                                                                                                                                                                                                                                                                                                               | OpenSky + adsb.lol                      | 🟢 (🟡 optional for more polling credits)                                                           |
 | 🎖️ **Military Flights**     | ADS-B military traffic in amber                                                                                                                                                                                                                                                                                                                                                     | adsb.lol                                | 🟢                                                                                                  |
 | 🚢 **Live Vessels**         | Thousands of ships worldwide                                                                                                                                                                                                                                                                                                                                                        | AISStream                               | 🟡                                                                                                  |
-| 🛰️ **Satellites**           | 838-object catalog, color-coded by class with a live legend — the **DENSE** chip drops in the whole Starlink shell                                                                                                                                                                                                                                                                  | CelesTrak                               | 🟢                                                                                                  |
+| 🛰️ **Satellites**           | CelesTrak catalog including green **AMATEUR RADIO** satellites, color-coded by class with a live legend — the **DENSE** chip drops in the whole Starlink shell                                                                                                                                                                                                                                                                  | CelesTrak                               | 🟢                                                                                                  |
 | 🌍 **Earthquakes**          | Global seismic activity, last 24h                                                                                                                                                                                                                                                                                                                                                   | USGS                                    | 🟢                                                                                                  |
 | 🚗 **Traffic**              | Simulated vehicles on OSM roads. With TomTom, live flow speeds drive the simulation and congestion colors below ~8 km; individual vehicle positions are not live observations                                                                                                                                                                                                       | TomTom + OSM                            | 🟢 simulation · 🟡 live flow speeds                                                                 |
 | 📹 **CCTV Mesh**            | ~3,900 public cameras projected _into_ the 3D space — Austin · Texas (TxDOT) · California (Caltrans) · London (TfL) · Ontario (511) · Finland (Fintraffic) · British Columbia (DriveBC) · Estonia (Tallinn, Tarktee) · Delaware (DelDOT live video) · New South Wales (Live Traffic NSW) · Calgary · Norway (Statens vegvesen). Positions are published; poses are estimated priors **you calibrate by dragging a gizmo on the camera itself** | City APIs                               | 🟢                                                                                                  |
@@ -482,6 +500,69 @@ security add-generic-password -U -s "cesium-ion"      -a "token"   -w
 ```
 
 OpenSky can run fully anonymous (`OPENSKY_AUTH_MODE=anon`), or import OAuth credentials with `./scripts/opensky-import-client.sh /path/to/credentials.json`.
+
+</details>
+
+<details>
+<summary>Amateur radio preview (Manchester)</summary>
+
+Enable **Amateur Radio Preview** under **DATA LAYERS → Utilities** and navigate
+to Manchester. Amber markers are BrandMeister repeaters/hotspots; blue markers
+are EchoLink RF links. The preview covers a 100 km radius around Manchester.
+Click a marker for its callsign, node ID, listed frequencies and directory age.
+The row also offers **Listen latest**, **Last Heard**, and **EchoLink Web** buttons.
+
+Directories are keyless. BrandMeister lists devices seen within the last day,
+not necessarily currently connected; EchoLink lists online links in a snapshot
+updated by the provider approximately every three minutes. Coordinates are
+owner-supplied and unverified. Directory markers do not indicate RF coverage,
+operator GPS positions, or current voice activity. Failed feeds are explicitly marked;
+cached records are labelled stale and retained for no more than an hour.
+
+**Live activity and audio:** **Listen latest** opens a compact bottom-edge
+BrandMeister dock and preselects one talkgroup from public activity. It prefers
+currently transmitting UK groups (234/235 prefixes), then English-priority
+groups, then others, selecting the newest transmission within that tier. If
+none are transmitting, it uses calls ended within the last three minutes;
+these may now be silent. English priority is best effort: TGs 91, 93, 95,
+913 and 3100, or a provider name containing "English", not speech detection.
+This network-wide audio selection is separate from the Manchester marker area.
+Use **Show player** and press Play inside Hoseline if the browser requires it.
+**Minimise to dock** keeps the same client and audio running while exposing
+the map. **Listen latest** retunes only when explicitly pressed; it does not
+continuously interrupt a conversation. **Choose manually** remains available.
+Activity errors are shown rather than silently selecting a default talkgroup.
+EchoLink opens an in-app panel but does not load its client until you acknowledge
+that other clients using your callsign are logged out and closed. It requires a
+validated single-user account; login and select one node manually. Embedded
+microphone/camera access is denied. Connections can announce your presence;
+incoming connections remain controlled by EchoLink settings. Closing the panel,
+switching clients or disabling the layer unloads the embedded player; minimising
+BrandMeister does not. Last Heard
+and a fallback button open official sites externally; external sites have their
+own microphone permissions. Credentials stay with the official cross-origin
+services; the app does not collect them or relay audio.
+
+**Published positions:** set `APRS_IS_CALLSIGN=YOURCALL-GV` in your ignored
+`.env` and restart the server. This must be your own unique APRS-IS identifier.
+The local server uses only `pass -1` (receive-only), with a fixed Manchester
+100 km filter. Green markers are last published APRS station fixes, refreshed
+every ten seconds; not every station is mobile, a person, or a GPS receiver.
+Cards distinguish receipt time from supplied UTC report time and show source
+provenance and ambiguity. Standard, compressed and unambiguous Mic-E station
+positions are decoded. Weather stations are identified; objects, messages,
+comments and do-not-archive reports are not retained. At most 1,000 fixes are
+held in memory for 15 minutes, with no disk history. The shared receiver stops
+after 30 seconds without position polling and reconnects with bounded backoff.
+Connection errors and unconfigured status are visible, never replaced by fake
+positions. BrandMeister radios appear only when they publish compatible APRS
+reports; EchoLink has no moving operator-location source in this preview.
+Selecting markers never transmits or automatically connects to a radio node.
+
+Sources: [BrandMeister API](https://api.brandmeister.network/docs/),
+[EchoLink geographic feed](https://www.echolink.org/googleInfo.htm),
+and [EchoLink Web FAQ](https://www.echolink.org/faq_webapp.htm).
+Position transport: [APRS-IS](https://www.aprs-is.net/Connecting.aspx).
 
 </details>
 

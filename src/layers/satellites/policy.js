@@ -4,7 +4,7 @@ import { satelliteClassColor } from '../../data/satelliteClass.js';
 /**
  * Satellite Orbits — Real-time positions via CelesTrak TLE + SGP4 propagation.
  *
- * Loads six CelesTrak groups (~840 sats): stations, visual, GPS, GLONASS,
+ * Loads seven CelesTrak groups: stations, amateur radio, visual, GPS, GLONASS,
  * Galileo, and the geosynchronous belt. Optional dense mode (setParams
  * catalog:'dense') adds the Starlink shell as points-only extras.
  * Renders positions via PointPrimitiveCollection, orbital paths as polylines.
@@ -44,6 +44,7 @@ export const RING_ROTATION_MS = 1000;
 
 export const CATALOG_GROUPS = [
   { tag: 'stations', path: 'stations' },
+  { tag: 'amateur', path: 'amateur' },
   { tag: 'visual', path: 'visual' },
   { tag: 'gps-ops', path: 'gps-ops' },
   { tag: 'glonass', path: 'glo-ops' },
@@ -115,6 +116,12 @@ export const POINT_STYLES = {
     color: _classColor('stations'),
     outlineColor: POINT_OUTLINE,
     outlineWidth: 0,
+  },
+  amateur: {
+    pixelSize: 8,
+    color: _classColor('amateur'),
+    outlineColor: POINT_OUTLINE,
+    outlineWidth: 1,
   },
   visual: {
     pixelSize: 6,

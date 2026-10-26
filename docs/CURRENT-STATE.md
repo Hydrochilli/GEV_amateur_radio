@@ -1,5 +1,93 @@
 # God's Eye View Current State
 
+The existing Satellites layer includes CelesTrak's `amateur` group in its core
+catalogue, without enabling the dense Starlink shell. Green AMATEUR RADIO
+classification is shared by the points, detection labels, tracked cards and
+row legend. Stations win deduplication before amateur, then generic groups;
+the ISS retains its station classification. Existing SGP4 propagation, orbit
+paths, camera follow and saved selected-NORAD state also apply to these objects.
+Amateur tracked cards disclose predicted positions, unverified radio status and
+orbital-element epoch. A failed amateur feed is named in the layer's partial
+error status rather than presented as healthy empty radio coverage.
+
+Selected amateur satellites and the ISS now own an optional SatNOGS observation
+lookup and a single 60-second refresh timer. The Satellites row's SatNOGS chip
+opens a lazy native panel: up to five completed observations from one public
+Network API page, UTC observation windows and age, contributing station,
+reported quality, frequency/mode and demodulated-file count. These are not
+confirmed packet timestamps or engineering values; authenticated DB telemetry
+is not imported. Recorded audio and waterfall media require explicit user
+actions and never autoplay. Closing, changing satellite, stopping tracking,
+disabling or destroying the layer releases media; stale asynchronous responses
+cannot reopen the panel or overwrite another selection.
+
+The fixed-origin GET-only `/api/satnogs/<NORAD>` dev/preview proxy validates
+exact NORAD matches and completed/nonfuture observations, bounds upstream
+time/body/concurrency, rate-limits requests and coalesces identical lookups.
+Cache TTL is 60 seconds with explicit stale-on-error server results up to
+15 minutes; no upstream pagination links are followed. Media URLs are confined
+to official Network/media hosts and the observation's path. Unsupported media
+locations, empty results and failures are explicitly disclosed. Injected
+satellite sources lacking optional `getObservations` keep working and report
+that capability unavailable. The panel and global attribution credit SatNOGS
+Network/contributing stations under CC BY-SA 4.0 with a filtering/summarising
+adaptation notice.
+
+Amateur Radio Preview is an opt-in Utilities layer (`amateur-radio`, share token
+`3`) covering nodes within 100 km of Manchester. The fixed-origin read-only
+`/api/amateur-radio` provider runs in dev and production preview, caches
+BrandMeister's documented device directory for five minutes and EchoLink's
+official KMZ for three minutes, and coalesces concurrent loads. Fetches and
+decoded KML are size-bounded; XML declarations are rejected and provider
+descriptions are displayed as text. No credentials or audio are relayed.
+Network failures are surfaced independently; explicitly stale cached records
+expire after an hour. Amber/blue stationary points expose a single selected
+world-overlay card and official-client launch chips. BrandMeister entries are
+recently seen devices, not live operator positions or transmission activity;
+EchoLink entries are online-directory snapshots with owner-supplied positions.
+Hoseline live callsign/talkgroup activity and audio now use a lazy official
+cross-origin iframe panel; EchoLink is loaded only after an existing-login
+acknowledgment, with microphone/camera permission denied. Login and node
+connections stay manual. Close, switch, disable and destroy unload the client;
+external fallbacks stop the embedded client first. CSP admits only these two
+additional exact frame origins, not their scripts in the parent page.
+
+BrandMeister now opens as a compact bottom-edge audio dock, with an expandable
+official Hoseline client. Minimise/show preserves that same frame and playback;
+close, client switch, layer disable and destroy unload it. The Listen latest
+action samples public first-party Last Heard group-call events for two seconds
+after connection and uses Hoseline's `?subscribe=<TG>` link. Selection happens
+once per explicit action, not continuously: currently transmitting UK groups,
+then English-priority groups, then others, newest within the tier. Only if no
+groups are transmitting are calls ended within three minutes considered.
+English classification is a documented best-effort shortlist/name match, not
+audio-language detection. Browser playback status stays owned by Hoseline and
+is not falsely presented as confirmed listening.
+
+The receive-only `/api/amateur-radio/activity` route coalesces samples using
+one lazy Socket.IO connection to the public `/lh` version-2 service used by
+Hoseline. Metadata-only sessions are capped at 512, with freshness/age checks,
+bounded transport payloads, connection/sample timeouts and a 90-second idle
+shutdown. Callsigns, aliases and raw payloads are discarded; no data is stored
+on disk. Source validation, cancellation and late-result guards prevent an
+abandoned selection from mounting a player. Empty/error results are explicit
+and keep manual controls available; retuning to the same group retains the
+existing frame. EchoLink acknowledgment and microphone denial are unchanged.
+
+The optional `/api/amateur-radio/positions` status/snapshot route leases one
+filtered receive-only APRS-IS connection identified by `APRS_IS_CALLSIGN` in
+ignored `.env`. No passcode, packet-transmission route or credential forwarding
+exists. TCP input, handshake/idle timeouts, retry backoff and a 1,000-station /
+15-minute memory-only store are bounded. Public standard/compressed/unambiguous
+Mic-E station positions are filtered to Manchester and rendered as green last
+reported fixes, independently of the three-minute directory refresh. Messages,
+objects, comments and do-not-archive positions are omitted. UTC report time,
+receipt age, source path, ambiguity and disconnected status remain distinct.
+Missing position support in an injected directory-only source is explicitly
+labelled unavailable without disabling the existing directories. BrandMeister
+APRS reports can appear, but activity does not establish GPS or identity and
+EchoLink does not provide moving operator positions here.
+
 Vessel sources can report healthy empty coverage using a current, complete
 snapshot with zero raw rows, a healthy transport and a positive last-message
 time. This clears obsolete contacts and settles startup without manufacturing

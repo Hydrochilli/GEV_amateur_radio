@@ -41,6 +41,12 @@ export const SATELLITE_CLASSES = Object.freeze({
     color: '#4fd8ff',
     blurb: 'GNSS navigation — GPS, GLONASS, Galileo',
   }),
+  amateur: Object.freeze({
+    label: 'AMATEUR RADIO',
+    color: '#76e3a0',
+    blurb:
+      'CelesTrak amateur-radio catalogue; predicted positions, not confirmed radio activity',
+  }),
   geo: Object.freeze({
     label: 'GEO',
     // Violet, unchanged. Already the app's "space" semantic (the detection
@@ -71,6 +77,7 @@ export const SATELLITE_CLASSES = Object.freeze({
 /** Legend/report order for the classes above. */
 export const SATELLITE_CLASS_ORDER = Object.freeze([
   'station',
+  'amateur',
   'nav',
   'geo',
   'visual',
@@ -84,6 +91,7 @@ export const SATELLITE_CLASS_ORDER = Object.freeze([
  */
 const GROUP_CLASS = Object.freeze({
   stations: Object.freeze({ klass: 'station', subtype: null }),
+  amateur: Object.freeze({ klass: 'amateur', subtype: null }),
   visual: Object.freeze({ klass: 'visual', subtype: null }),
   'gps-ops': Object.freeze({ klass: 'nav', subtype: 'GPS' }),
   glonass: Object.freeze({ klass: 'nav', subtype: 'GLONASS' }),

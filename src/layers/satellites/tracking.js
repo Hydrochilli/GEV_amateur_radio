@@ -72,6 +72,7 @@ export function createTracking({ state: layerState, services, parts, source }) {
     skipViewerUntrack = false,
     { origin = 'programmatic' } = {},
   ) {
+    parts.observations?.clear();
     // Untracking dissolves the cluster: every companion returns to its own
     // ambient label on the next collection.
     layerState._dockedCompanions = new Set();
@@ -361,6 +362,35 @@ export function createTracking({ state: layerState, services, parts, source }) {
       }),
       detail,
     ];
+    if (sat?.group === 'amateur') {
+      details.push('SGP4 predicted position; radio status unverified');
+      const epochMs = (sat.satrec.jdsatepoch - 2440587.5) * 86400_000;
+      if (Number.isFinite(epochMs))
+        details.push(
+          `Orbital elements epoch: ${new Date(epochMs).toISOString()}`,
+        );
+    }
+    if (layerState._satnogs?.noradId === layerState._trackedNorad) {
+      const observation = layerState._satnogs;
+      const latest = observation.snapshot?.observations[0];
+      details.push(
+        observation.status === 'loading'
+          ? 'SatNOGS: checking observations...'
+          : observation.status === 'error' ||
+              observation.status === 'unavailable'
+            ? 'SatNOGS unavailable; see observations panel'
+            : latest
+              ? `SatNOGS observation ended ${new Date(latest.endAt).toISOString()}${observation.snapshot.stale ? ' | STALE' : ''}`
+              : 'SatNOGS: no completed observations in checked results',
+      );
+      if (latest)
+        details.push(
+          `${latest.stationName} | reported quality: ${latest.status}`,
+        );
+      details.push(
+        'Use the SatNOGS chip under Satellites for recordings and details',
+      );
+    }
     // Docked companions are consolidated onto the tracked card as SECONDARY info
     // instead of competing with it as separate ambient labels. Identities are
     // preserved: the catalog is untouched and every companion returns to its own
@@ -460,6 +490,7 @@ export function createTracking({ state: layerState, services, parts, source }) {
     layerState._contextRefreshedAtMs = Date.now();
 
     layerState._viewer.trackedEntity = layerState._trackedEntity;
+    parts.observations?.select(noradId, sat);
     console.log(`[Data:Satellites] Tracking ${name} (NORAD ${noradId})`);
   }
   return {
